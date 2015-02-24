@@ -1,0 +1,88 @@
+########
+# MISC #
+########
+DATABASE_PASSWORD=password
+ADMIN_PASSWORD=password
+SERVICE_PASSWORD=password
+SERVICE_TOKEN=password
+RABBIT_PASSWORD=password
+
+# Reclone each time
+#RECLONE=yes
+
+# Enable Logging
+LOGFILE=/opt/stack/logs/stack.sh.log
+VERBOSE=True
+LOG_COLOR=True
+SCREEN_LOGDIR=/opt/stack/logs
+
+
+#################
+# PRE-REQUISITE #
+#################
+ENABLED_SERVICES=rabbit,mysql,key
+
+
+########
+# CEPH #
+########
+ENABLED_SERVICES+=,ceph
+
+# DevStack will create a loop-back disk formatted as XFS to store the
+# Ceph data.
+CEPH_LOOPBACK_DISK_SIZE=10G
+
+# Ceph cluster fsid
+CEPH_FSID=$(uuidgen)
+
+# Glance pool, pgs and user
+GLANCE_CEPH_USER=glance
+GLANCE_CEPH_POOL=images
+GLANCE_CEPH_POOL_PG=8
+GLANCE_CEPH_POOL_PGP=8
+
+# Nova pool and pgs
+NOVA_CEPH_POOL=vms
+NOVA_CEPH_POOL_PG=8
+NOVA_CEPH_POOL_PGP=8
+
+# Cinder pool, pgs and user
+CINDER_CEPH_POOL=volumes
+CINDER_CEPH_POOL_PG=8
+CINDER_CEPH_POOL_PGP=8
+CINDER_CEPH_USER=cinder
+CINDER_CEPH_UUID=$(uuidgen)
+
+# Cinder backup pool, pgs and user
+CINDER_BAK_CEPH_POOL=backup
+CINDER_BAK_CEPH_POOL_PG=8
+CINDER_BAKCEPH_POOL_PGP=8
+CINDER_BAK_CEPH_USER=cinder-bak
+
+# How many replicas are to be configured for your Ceph cluster
+CEPH_REPLICAS=${CEPH_REPLICAS:-1}
+
+# Connect DevStack to an existing Ceph cluster
+REMOTE_CEPH=False
+REMOTE_CEPH_ADMIN_KEY_PATH=/etc/ceph/ceph.client.admin.keyring
+
+
+##########################
+# GLANCE - IMAGE SERVICE #
+##########################
+ENABLED_SERVICES+=,g-api,g-reg
+
+
+#################################
+# CINDER - BLOCK DEVICE SERVICE #
+#################################
+ENABLED_SERVICES+=,cinder,c-api,c-vol,c-sch,c-bak
+CINDER_DRIVER=ceph
+CINDER_ENABLED_BACKENDS=ceph
+
+
+##########################
+# NOVA - COMPUTE SERVICE #
+##########################
+ENABLED_SERVICES+=,n-api,n-crt,n-cpu,n-cond,n-sch,n-net
+DEFAULT_INSTANCE_TYPE=m1.micro
