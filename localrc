@@ -26,7 +26,7 @@ ENABLED_SERVICES=rabbit,mysql,key
 ########
 # CEPH #
 ########
-ENABLED_SERVICES+=,ceph
+enable_plugin ceph https://github.com/openstack/devstack-plugin-ceph
 
 # DevStack will create a loop-back disk formatted as XFS to store the
 # Ceph data.
