@@ -51,7 +51,7 @@ git clone https://github.com/ceph/teuthology/
 cd teuthology && ./bootstrap
 python3 -m venv venv
 source ./venv/bin/activate
-python3 -m pip install git+https://github.com/zmc/ceph-devstack.git
+python3 -m pip install git+https://github.com/ceph/ceph-devstack.git
 ```
 
 ## Configuration
@@ -162,7 +162,7 @@ git clone https://github.com/<user-name>/ceph-devstack
 
 3. Setup the remote repo as upstream (this will prevent creating additional branches)
 ```bash
-git remote add upstream https://github.com/zmc/ceph-devstack
+git remote add upstream https://github.com/ceph/ceph-devstack
 ```
 
 4. Create virtual env in the root directory of ceph-devstack & install python dependencies
