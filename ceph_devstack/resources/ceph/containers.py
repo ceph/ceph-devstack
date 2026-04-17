@@ -367,7 +367,7 @@ class Teuthology(Container):
                 f"{ansible_inv}/secrets:/etc/ansible/secrets",
             ]
         ssh_auth_socket = os.environ.get("SSH_AUTH_SOCK")
-        if ssh_auth_socket:
+        if ssh_auth_socket and Path(ssh_auth_socket).exists():
             cmd += [
                 "-v",
                 f"{ssh_auth_socket}:{ssh_auth_socket}",
