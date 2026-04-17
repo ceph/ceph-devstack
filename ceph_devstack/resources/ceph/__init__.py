@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import os
+import pathlib
 import tempfile
 
 from subprocess import CalledProcessError
@@ -67,12 +68,13 @@ class SSHKeyPair(Secret):
         privkey_path = os.environ.get("SSH_PRIVKEY_PATH")
         self.pubkey_path = "/dev/null"
         if not privkey_path:
-            privkey_path = tempfile.mktemp(
+            temp_dir = tempfile.mkdtemp(
                 prefix="teuthology-ssh-key-",
                 dir="/tmp",
             )
+            privkey_path = pathlib.Path(temp_dir) / self.__class__.privkey_path
             await self.cmd(
-                ["ssh-keygen", "-t", "rsa", "-N", "", "-f", privkey_path],
+                ["ssh-keygen", "-t", "rsa", "-N", "", "-f", str(privkey_path)],
                 check=True,
                 force_local=True,
             )
