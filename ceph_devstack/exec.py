@@ -60,7 +60,10 @@ class Command:
     async def arun(self) -> asyncio.subprocess.Process:
         logger.log(VERBOSE, self._make_log_msg())
         loop = asyncio.get_running_loop()
-        protocol_factory: functools.partial[SubprocessStreamProtocol]
+        protocol_factory: (
+            functools.partial[SubprocessStreamProtocol]
+            | functools.partial[LoggingStreamProtocol]
+        )
         if self.stream_output:
             protocol_factory = functools.partial(
                 LoggingStreamProtocol,
