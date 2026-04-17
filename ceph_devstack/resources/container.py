@@ -11,12 +11,12 @@ from ceph_devstack.resources import PodmanResource
 class Container(PodmanResource):
     network: str
     secret: List[str]
-    cmd_vars: List[str] = ["name", "image", "image_tag"]
+    cmd_vars: List[str] = ["name", "image", "image_name", "image_tag"]
     build_cmd: List[str] = [
         "podman",
         "build",
         "-t",
-        "{name}:{image_tag}",
+        "{image_name}:{image_tag}",
         ".",
     ]
     create_cmd: List[str] = ["podman", "container", "create", "{name}"]
@@ -27,6 +27,7 @@ class Container(PodmanResource):
     pull_cmd: List[str] = ["podman", "pull", "{image}"]
     wait_cmd: List[str] = ["podman", "wait", "{name}"]
     env_vars: Dict[str, Optional[str]] = {}
+    _image_name: str | None = None
 
     def __init__(self, name: str = ""):
         super().__init__(name)
@@ -49,9 +50,15 @@ class Container(PodmanResource):
         return config["containers"].get(self.__class__.__name__.lower(), {})
 
     @property
+    def image_name(self) -> str:
+        if self._image_name is not None:
+            return self._image_name
+        return self.__class__.__name__.lower()
+
+    @property
     def image(self):
         if self.repo:
-            return f"localhost/{self.name}"
+            return f"localhost/{self.image_name}"
         return self.config["image"]
 
     @property

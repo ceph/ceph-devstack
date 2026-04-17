@@ -154,7 +154,7 @@ class Pulpito(Container):
 
 
 class TestNode(Container):
-    cmd_vars: List[str] = ["name", "image"]
+    _image_name = "teuthology-testnode"
     capabilities = [
         "SYS_ADMIN",
         "NET_ADMIN",
