@@ -1,10 +1,13 @@
 module ceph_devstack 1.0;
 
 require {
+	type unconfined_t;
+	type container_t;
 	type container_init_t;
 	type proc_t;
 	type sysfs_t;
 	type tmpfs_t;
+	type user_tmp_t;
 	type devpts_t;
 	class filesystem mount;
 	class filesystem unmount;
@@ -74,6 +77,9 @@ require {
 	type fuse_device_t;
 
 	type tun_tap_device_t;
+
+	class sock_file write;
+	class unix_stream_socket connectto;
 }
 
 #============= container_init_t ==============
@@ -116,3 +122,6 @@ allow container_init_t lvm_control_t:chr_file mounton;
 allow container_init_t fuse_device_t:chr_file mounton;
 allow container_init_t fixed_disk_device_t:blk_file mounton;
 allow container_init_t tun_tap_device_t:chr_file mounton;
+
+allow container_t user_tmp_t:sock_file write;
+allow container_t unconfined_t:unix_stream_socket connectto;
