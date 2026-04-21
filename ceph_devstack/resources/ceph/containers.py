@@ -99,7 +99,7 @@ class Paddles(Container):
 
 
 class Archive(Container):
-    cmd_vars: List[str] = ["name", "image", "archive_dir"]
+    cmd_vars = Container.cmd_vars + ["archive_dir"]
     create_cmd = [
         "podman",
         "container",
