@@ -150,6 +150,7 @@ class Pulpito(Container):
     ]
     env_vars = {
         "PULPITO_PADDLES_ADDRESS": "http://paddles:8080",
+        "VITE_MACHINE_TYPE": "testnode",
     }
 
 
