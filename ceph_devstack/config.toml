@@ -1,7 +1,7 @@
 data_dir = "~/.local/share/ceph-devstack"
 
 [containers.archive]
-image = "python:alpine"
+image = "docker.io/alpinelinux/darkhttpd:latest"
 
 [containers.beanstalk]
 image = "quay.io/ceph-infra/teuthology-beanstalkd:main"
