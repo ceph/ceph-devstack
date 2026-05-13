@@ -21,7 +21,7 @@ file = "README.md"
 content-type = "text/x-markdown"
 
 [project.urls]
-Homepage = "https://github.com/zmc/ceph-devstack"
+Homepage = "https://github.com/ceph/ceph-devstack"
 
 [project.optional-dependencies]
 test = ["pytest", "pytest-asyncio", "tox", "tox-uv"]
@@ -35,6 +35,13 @@ include-package-data = true
 [tool.setuptools.packages.find]
 namespaces = false
 
+[tool.setuptools_scm]
+version_scheme = "python-simplified-semver"
+
 [build-system]
-requires = ["setuptools>=61.2"]
 build-backend = "setuptools.build_meta"
+requires = [
+    "setuptools>=64",
+    "wheel",
+    "setuptools-scm>=8",
+]
