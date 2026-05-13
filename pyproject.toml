@@ -1,10 +1,40 @@
-[build-system]
-build-backend = "setuptools.build_meta"
-requires = [
-    "setuptools>=45",
-    "wheel",
-    "setuptools_scm>=6.2",
+[project]
+name = "ceph-devstack"
+authors = [{ name = "Zack Cerza", email = "zack@cerza.org" }]
+license = "MIT"
+license-files = ["LICENSE"]
+classifiers = [
+  "Intended Audience :: Developers",
+  "Natural Language :: English",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
 ]
+keywords = ["podman", "ceph"]
+description = "Run a full teuthology lab on your laptop!"
+requires-python = ">=3.8"
+dependencies = ["packaging", "pre-commit", "PyYAML", "tomlkit"]
+dynamic = ["version"]
 
-[tool.setuptools_scm]
-version_scheme = "python-simplified-semver"
+[project.readme]
+file = "README.md"
+content-type = "text/x-markdown"
+
+[project.urls]
+Homepage = "https://github.com/zmc/ceph-devstack"
+
+[project.optional-dependencies]
+test = ["pytest", "pytest-asyncio", "tox", "tox-uv"]
+
+[project.scripts]
+ceph-devstack = "ceph_devstack.cli:main"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+namespaces = false
+
+[build-system]
+requires = ["setuptools>=61.2"]
+build-backend = "setuptools.build_meta"
