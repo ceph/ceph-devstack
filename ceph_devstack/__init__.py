@@ -117,8 +117,8 @@ def parse_args(args: List[str]) -> argparse.Namespace:
 
 def deep_merge(*maps):
     result = {}
-    for map in maps:
-        for k, v in map.items():
+    for mapping in maps:
+        for k, v in mapping.items():
             if isinstance(v, dict):
                 v = deep_merge(result.get(k, {}), v)
             result[k] = v
