@@ -52,3 +52,4 @@ def main():  # noqa: C901
         sys.exit(asyncio.run(run()))
     except KeyboardInterrupt:
         logger.debug("Exiting!")
+        return 130  # 128 + SIGINT
