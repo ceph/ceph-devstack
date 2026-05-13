@@ -8,8 +8,30 @@ from ceph_devstack import config, logger, parse_args, VERBOSE
 from ceph_devstack.requirements import check_requirements
 from ceph_devstack.resources.ceph import CephDevStack
 
+CONFIG_HANDLERS = {
+    "dump": lambda config, args: print(config.dump()),
+    "get": lambda config, args: print(config.get_value(args.name)),
+    "set": lambda config, args: print(config.set_value(args.name, args.value)),
+}
 
-def main():  # noqa: C901
+COMMAND_HANDLERS = {
+    "doctor": None,
+    "apply": lambda args, obj: obj.apply(args.command),
+    "pull": lambda _, obj: obj.pull(),
+    "build": lambda _, obj: obj.build(),
+    "create": lambda _, obj: obj.create(),
+    "remove": lambda _, obj: obj.remove(),
+    "start": lambda _, obj: obj.start(),
+    "stop": lambda _, obj: obj.stop(),
+    "watch": lambda _, obj: obj.watch(),
+    "wait": lambda args, obj: obj.wait(container_name=args.container),
+    "logs": lambda args, obj: obj.logs(
+        run_name=args.run_name, job_id=args.job_id, locate=args.locate
+    ),
+}
+
+
+def main() -> int:
     args = parse_args(sys.argv[1:])
     config.load(args.config_file)
     if args.verbose:
@@ -17,13 +39,8 @@ def main():  # noqa: C901
             if not isinstance(handler, logging.FileHandler):
                 handler.setLevel(VERBOSE)
     if args.command == "config":
-        if args.config_op == "dump":
-            print(config.dump())
-        if args.config_op == "get":
-            print(config.get_value(args.name))
-        elif args.config_op == "set":
-            config.set_value(args.name, args.value)
-        return
+        CONFIG_HANDLERS[args.config_op](config, args)
+        return 0
     config["args"] = vars(args)
     data_path = Path(config["data_dir"]).expanduser()
     data_path.mkdir(parents=True, exist_ok=True)
@@ -35,18 +52,10 @@ def main():  # noqa: C901
             obj.check_requirements(),
         ):
             logger.error("Requirements not met!")
-            sys.exit(1)
-        if args.command == "doctor":
-            return
-        elif args.command == "wait":
-            return await obj.wait(container_name=args.container)
-        elif args.command == "logs":
-            return await obj.logs(
-                run_name=args.run_name, job_id=args.job_id, locate=args.locate
-            )
-        else:
-            await obj.apply(args.command)
-            return 0
+            return 1
+        handler = COMMAND_HANDLERS.get(args.command)
+        if handler:
+            return await handler(args, obj)
 
     try:
         sys.exit(asyncio.run(run()))
