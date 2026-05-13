@@ -29,7 +29,7 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Install packages
-        run: sudo apt install podman golang-github-containernetworking-plugin-dnsname sqlite3 jq
+        run: sudo apt-get update && sudo apt-get install podman golang-github-containernetworking-plugin-dnsname sqlite3 jq
       - name: Create virtualenv
         run: python3 -m venv venv
       - name: Install
