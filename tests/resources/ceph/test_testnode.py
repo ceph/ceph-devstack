@@ -25,6 +25,7 @@ class TestTestnode:
         assert "--device=/dev/loop7" in create_cmd
 
     def test_testnode_devices_is_based_on_loop_device_count_config(self, cls):
+        config.load(Path(__file__).parent.joinpath("fixtures", "testnode-config.toml"))
         testnode = cls("testnode_1")
         assert testnode.loop_device_count == 4
         assert testnode.devices == [
