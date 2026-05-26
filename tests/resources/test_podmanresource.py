@@ -4,6 +4,7 @@ from pathlib import Path
 from subprocess import CalledProcessError
 from unittest.mock import patch
 
+
 from ceph_devstack.resources import PodmanResource
 
 
@@ -27,6 +28,9 @@ class TestPodmanResource:
         assert "name" in obj.cmd_vars
         res = obj.format_cmd(["foo", "{name}", "bar", "x{name}x"])
         assert res == ["foo", "pr", "bar", "xprx"]
+
+    def test_cmd_vars_contains_name(self, cls):
+        assert "name" in cls.cmd_vars
 
     def test_repr(self, cls):
         obj = cls()
