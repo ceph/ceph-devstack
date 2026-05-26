@@ -10,6 +10,7 @@ RUN_DIRNAME_PATTERN = re.compile(
 
 def get_logtimestamp(dirname: str) -> datetime:
     match_ = RUN_DIRNAME_PATTERN.search(dirname)
+    assert match_
     return datetime.strptime(match_.group("timestamp"), "%Y-%m-%d_%H:%M:%S")
 
 

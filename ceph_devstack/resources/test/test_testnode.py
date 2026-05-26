@@ -2,14 +2,14 @@ from pathlib import Path
 
 import pytest
 
-from ceph_devstack.resources.ceph import TestNode
+from ceph_devstack.resources.ceph import TestNode as _TestNode
 from ceph_devstack import config
 
 
 class TestTestnode:
     @pytest.fixture(scope="class")
-    def cls(self) -> type[TestNode]:
-        return TestNode
+    def cls(self) -> type[_TestNode]:
+        return _TestNode
 
     def test_testnode_loop_device_count_default_to_one(self, cls):
         testnode = cls("testnode_1")

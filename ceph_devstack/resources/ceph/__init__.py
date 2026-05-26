@@ -229,9 +229,7 @@ class CephDevStack:
         logger.error(f"Could not find container {container_name}")
         return 1
 
-    async def logs(
-        self, run_name: str = None, job_id: str = None, locate: bool = False
-    ):
+    async def logs(self, run_name: str = "", job_id: str = "", locate: bool = False):
         try:
             log_file = self.get_log_file(run_name, job_id)
         except FileNotFoundError:
@@ -250,7 +248,7 @@ class CephDevStack:
                     while chunk := f.read(buffer_size):
                         print(chunk, end="")
 
-    def get_log_file(self, run_name: str = None, job_id: str = None):
+    def get_log_file(self, run_name: str = "", job_id: str = ""):
         archive_dir = Teuthology().archive_dir.expanduser()
 
         if not run_name:
