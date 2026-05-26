@@ -5,7 +5,7 @@ from unittest.mock import patch, AsyncMock
 
 from ceph_devstack import config
 from ceph_devstack.resources.container import Container
-from ceph_devstack.resources.test.test_podmanresource import (
+from .test_podmanresource import (
     TestPodmanResource as _TestPodmanResource,
 )
 

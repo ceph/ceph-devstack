@@ -44,10 +44,6 @@ class TestPodmanResource:
 
     async def test_cmd(self, cls):
         with patch("ceph_devstack.host.host.arun") as m_arun:
-            # at_eof() is not async, so the below lines avoid this warning:
-            # RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
-            # m_arun.return_value.stderr.at_eof = Mock()
-            # m_arun.return_value.stdout.at_eof = Mock()
             obj = cls()
             await obj.cmd(["0"])
             print(m_arun.await_args_list)
