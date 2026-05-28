@@ -107,6 +107,10 @@ class Host:
         out = await proc.stdout.read()
         return int(out.decode().strip())
 
+    async def apparmor_enabled(self) -> bool:
+        proc = await host.arun(["aa-enabled", "-q"])
+        return await proc.wait() == 0
+
 
 class LocalHost(Host):
     pass
