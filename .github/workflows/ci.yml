@@ -48,6 +48,11 @@ jobs:
         run: ./venv/bin/ceph-devstack -v start
       - name: Check Status
         run: podman ps -a
+      - name: Check ssh access to testnode container
+        run: sleep 10 && podman exec teuthology ssh -oBatchMode=yes -v "cm@$(podman inspect --format '{{ slice .ID 0 12 }}' testnode_0)" whoami
+      - name: Dump testnode journal
+        if: failure()
+        run: podman exec testnode_0 journalctl
       - name: Wait
         run: ./venv/bin/ceph-devstack wait teuthology
       - name: Dump logs
