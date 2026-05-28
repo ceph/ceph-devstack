@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import pathlib
@@ -44,7 +45,7 @@ class Host:
         cwd: Optional[pathlib.Path] = None,
         env: Optional[Dict] = None,
         stream_output: bool = False,
-    ):
+    ) -> asyncio.subprocess.Process:
         return await self.cmd(
             args, cwd=cwd, env=env, stream_output=stream_output
         ).arun()
