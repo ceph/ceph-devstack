@@ -1,3 +1,4 @@
+import shlex
 import sys
 
 from pathlib import Path
@@ -35,7 +36,7 @@ class FixableRequirement(Requirement):
 
     async def suggest(self):
         if hasattr(self, "suggest_msg"):
-            logger.error(f"{self.suggest_msg}. Try: {' '.join(self.fix_cmd)}")
+            logger.error(f"{self.suggest_msg}. Try: {shlex.join(self.fix_cmd)}")
 
     async def fix(self) -> bool:
         assert self.fix_cmd, "Attempted to fix without a fix command"
@@ -217,6 +218,19 @@ class FuseOverlayfsPresence(FixableRequirement):
     fix_cmd = ["sudo", "dnf", "install", "-y", "fuse-overlayfs"]
 
 
+class AppArmorProfile(FixableRequirement):
+    _profile_path = "/etc/apparmor.d/local/unix-chkpwd"
+    _profile_content = '"capability dac_override,"'
+    check_cmd = ["test", "-f", _profile_path]
+    suggest_msg = "Did not find required apparmor profile"
+    fix_cmd = [
+        "sudo",
+        "bash",
+        "-c",
+        f"echo -e {_profile_content} > {_profile_path} && systemctl reload apparmor",
+    ]
+
+
 async def check_requirements():
     if not await PodmanPlatform().evaluate():
         return False
@@ -247,6 +261,10 @@ async def check_requirements():
     if await host.selinux_enforcing():
         result = result and await SELinuxBoolean("container_manage_cgroup").evaluate()
         result = result and await SELinuxBoolean("container_use_devices").evaluate()
+
+    # AppArmor
+    if await host.apparmor_enabled():
+        result = result and await AppArmorProfile().evaluate()
 
     # podman DNS plugin
     if not await PodmanVersion("5.0").evaluate():

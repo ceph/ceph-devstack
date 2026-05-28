@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import pathlib
@@ -44,7 +45,7 @@ class Host:
         cwd: Optional[pathlib.Path] = None,
         env: Optional[Dict] = None,
         stream_output: bool = False,
-    ):
+    ) -> asyncio.subprocess.Process:
         return await self.cmd(
             args, cwd=cwd, env=env, stream_output=stream_output
         ).arun()
@@ -106,6 +107,10 @@ class Host:
         assert proc.stdout is not None
         out = await proc.stdout.read()
         return int(out.decode().strip())
+
+    async def apparmor_enabled(self) -> bool:
+        proc = await host.arun(["aa-enabled", "-q"])
+        return await proc.wait() == 0
 
 
 class LocalHost(Host):
