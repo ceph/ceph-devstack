@@ -1,3 +1,4 @@
+import shlex
 import sys
 
 from pathlib import Path
@@ -35,7 +36,7 @@ class FixableRequirement(Requirement):
 
     async def suggest(self):
         if hasattr(self, "suggest_msg"):
-            logger.error(f"{self.suggest_msg}. Try: {' '.join(self.fix_cmd)}")
+            logger.error(f"{self.suggest_msg}. Try: {shlex.join(self.fix_cmd)}")
 
     async def fix(self) -> bool:
         assert self.fix_cmd, "Attempted to fix without a fix command"
