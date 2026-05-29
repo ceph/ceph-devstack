@@ -48,7 +48,7 @@ class Postgres(Container):
         password = self.env_vars["APP_DB_PASS"]
         db_name = self.env_vars["APP_DB_NAME"]
         self.paddles_sqla_url = (
-            f"postgresql+psycopg2://{username}:{password}@postgres:5432/{db_name}"
+            f"postgresql+psycopg://{username}:{password}@postgres:5432/{db_name}"
         )
 
 
