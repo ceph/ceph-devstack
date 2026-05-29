@@ -4,6 +4,7 @@ from pathlib import Path
 from subprocess import CalledProcessError
 from unittest.mock import patch
 
+
 from ceph_devstack.resources import PodmanResource
 
 
@@ -28,6 +29,9 @@ class TestPodmanResource:
         res = obj.format_cmd(["foo", "{name}", "bar", "x{name}x"])
         assert res == ["foo", "pr", "bar", "xprx"]
 
+    def test_cmd_vars_contains_name(self, cls):
+        assert "name" in cls.cmd_vars
+
     def test_repr(self, cls):
         obj = cls()
         class_name = cls.__name__
@@ -44,10 +48,6 @@ class TestPodmanResource:
 
     async def test_cmd(self, cls):
         with patch("ceph_devstack.host.host.arun") as m_arun:
-            # at_eof() is not async, so the below lines avoid this warning:
-            # RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
-            # m_arun.return_value.stderr.at_eof = Mock()
-            # m_arun.return_value.stdout.at_eof = Mock()
             obj = cls()
             await obj.cmd(["0"])
             print(m_arun.await_args_list)
