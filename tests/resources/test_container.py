@@ -172,10 +172,15 @@ class TestContainerRunning(_TestContainerBase):
             assert await obj.is_running() is False
 
 
-class TestContainerImage(_TestContainerBase):
-    def test_image_returns_config_image_when_no_repo(self, cls):
+class TestContainerImageName(_TestContainerBase):
+    def test_image_name_default_returns_class_name(self, cls):
         obj = cls()
-        assert obj.image == "example.com/image:latest"
+        assert obj.image_name == "container"
+
+    def test_image_name_returns_custom_when_set(self, cls):
+        obj = cls()
+        obj._image_name = "custom-image"
+        assert obj.image_name == "custom-image"
 
 
 class TestContainerImageTag(_TestContainerBase):
@@ -188,6 +193,18 @@ class TestContainerImageTag(_TestContainerBase):
         obj = cls()
         config["containers"]["container"] = {"image": "example.com/image"}
         assert obj.image_tag == "latest"
+
+
+class TestContainerImage(_TestContainerBase):
+    def test_image_returns_config_image_when_no_repo(self, cls):
+        obj = cls()
+        assert obj.image == "example.com/image:latest"
+
+    def test_image_returns_localhost_when_repo_exists(self, cls):
+        config["containers"]["container"]["repo"] = "/path/to/repo"
+        obj = cls()
+        obj._image_name = "my-image"
+        assert obj.image == "localhost/my-image"
 
 
 class TestContainerCwd(_TestContainerBase):

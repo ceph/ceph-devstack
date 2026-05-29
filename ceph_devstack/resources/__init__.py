@@ -38,6 +38,7 @@ class PodmanResource:
     stop_cmd: List[str] = []
     cmd_vars: List[str] = ["name"]
     log: Dict[str, Set[str]] = {}
+    _name: str | None = None
 
     def __init__(self, name: str = ""):
         if name:
@@ -45,7 +46,7 @@ class PodmanResource:
 
     @property
     def name(self) -> str:
-        if hasattr(self, "_name"):
+        if self._name is not None:
             return self._name
         return self.__class__.__name__.lower()
 
@@ -110,5 +111,5 @@ class PodmanResource:
         await self.cmd(self.format_cmd(self.remove_cmd))
 
     def __repr__(self):
-        param_str = "" if not hasattr(self, "_name") else f'name="{self._name}"'
+        param_str = "" if self._name is None else f'name="{self._name}"'
         return f"{self.__class__.__name__}({param_str})"

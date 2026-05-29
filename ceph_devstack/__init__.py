@@ -5,7 +5,7 @@ import tomlkit.items
 import tomlkit.exceptions
 
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import List
 
 
 VERBOSE = 15
@@ -117,8 +117,8 @@ def parse_args(args: List[str]) -> argparse.Namespace:
 
 def deep_merge(*maps):
     result = {}
-    for map in maps:
-        for k, v in map.items():
+    for mapping in maps:
+        for k, v in mapping.items():
             if isinstance(v, dict):
                 v = deep_merge(result.get(k, {}), v)
             result[k] = v
@@ -128,7 +128,7 @@ def deep_merge(*maps):
 class Config(dict):
     __slots__ = ["user_obj", "user_path"]
 
-    def load(self, config_path: Optional[Path] = None):
+    def load(self, config_path: Path | None = None):
         parsed = tomlkit.parse((Path(__file__).parent / "config.toml").read_text())
         self.update(parsed)
         if config_path:
@@ -160,18 +160,18 @@ class Config(dict):
             return str(obj)
         return tomlkit.dumps(obj).strip()
 
-    def set_value(self, name: str, value: str):
+    def set_value(self, name: str, value: str) -> None:
         path = name.split(".")
         obj = self.user_obj
         i = 0
         last_index = len(path) - 1
-        item: Union[tomlkit.items.Item, str] = value
         try:
-            item = tomlkit.value(item)
-        except tomlkit.exceptions.UnexpectedCharError:
-            pass
-        except tomlkit.exceptions.InternalParserError:
-            pass
+            item = tomlkit.value(value)
+        except (
+            tomlkit.exceptions.UnexpectedCharError,
+            tomlkit.exceptions.InternalParserError,
+        ):
+            item = tomlkit.item(value)
         while i <= last_index:
             if i < last_index:
                 obj = obj.setdefault(path[i], {})

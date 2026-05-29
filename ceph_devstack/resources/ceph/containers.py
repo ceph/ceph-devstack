@@ -99,7 +99,7 @@ class Paddles(Container):
 
 
 class Archive(Container):
-    cmd_vars: List[str] = ["name", "image", "archive_dir"]
+    cmd_vars = Container.cmd_vars + ["archive_dir"]
     create_cmd = [
         "podman",
         "container",
@@ -150,11 +150,12 @@ class Pulpito(Container):
     ]
     env_vars = {
         "PULPITO_PADDLES_ADDRESS": "http://paddles:8080",
+        "VITE_MACHINE_TYPE": "testnode",
     }
 
 
 class TestNode(Container):
-    cmd_vars: List[str] = ["name", "image"]
+    _image_name = "teuthology-testnode"
     capabilities = [
         "SYS_ADMIN",
         "NET_ADMIN",
@@ -367,7 +368,7 @@ class Teuthology(Container):
                 f"{ansible_inv}/secrets:/etc/ansible/secrets",
             ]
         ssh_auth_socket = os.environ.get("SSH_AUTH_SOCK")
-        if ssh_auth_socket:
+        if ssh_auth_socket and Path(ssh_auth_socket).exists():
             cmd += [
                 "-v",
                 f"{ssh_auth_socket}:{ssh_auth_socket}",

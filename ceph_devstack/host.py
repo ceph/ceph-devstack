@@ -109,7 +109,10 @@ class Host:
         return int(out.decode().strip())
 
     async def apparmor_enabled(self) -> bool:
-        proc = await host.arun(["aa-enabled", "-q"])
+        try:
+            proc = await host.arun(["aa-enabled", "-q"])
+        except FileNotFoundError:
+            return False
         return await proc.wait() == 0
 
 
