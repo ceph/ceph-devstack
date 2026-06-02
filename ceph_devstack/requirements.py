@@ -1,5 +1,4 @@
 import shlex
-import sys
 
 from pathlib import Path
 from packaging.version import parse as parse_version, Version
@@ -40,7 +39,7 @@ class FixableRequirement(Requirement):
 
     async def fix(self) -> bool:
         assert self.fix_cmd, "Attempted to fix without a fix command"
-        proc = await self.host.arun(self.fix_cmd)
+        proc = await self.host.arun(self.fix_cmd, stream_output=True)
         return await proc.wait() == 0
 
 
@@ -48,36 +47,49 @@ class LocalRequirement(Requirement):
     host = local_host
 
 
-class PodmanPlatform(Requirement):
+class LocalFixableRequirement(FixableRequirement):
+    host = local_host
+
+
+class PodmanPlatform(LocalFixableRequirement):
+    suggest_msg = "podman not found"
+
+    @property
+    def fix_cmd(self):
+        host_os = self.host.os_type()
+        if host_os == "darwin":
+            return ["brew", "install", "podman"]
+        return ["sudo", host.package_manager(), "install", "-y", "podman"]
+
     async def check(self):
-        result = False
         try:
-            podman_info = await self.host.podman_info()
+            await self.host.podman_info()
+            return True
         except FileNotFoundError:
             logger.error("podman not found. Try: dnf install podman")
             return False
-        try:
-            host_os = (
-                podman_info["host"].get("Os") or podman_info["host"]["os"]
-            ).lower()
-            if host_os == "linux":
-                result = True
-        except KeyError:
-            host_os = sys.platform.lower()
-            result = False
-            if sys.platform == "darwin":
-                logger.error(
-                    "The podman machine (VM) is not running. "
-                    "Try: podman machine init --now"
-                )
-            else:
-                logger.error(
-                    "Unknown error trying to query podman. Is podman installed?"
-                )
-            return result
-        if host_os != "linux":
-            logger.error("The platform '{host_os}' is not currently supported.")
-        return result
+
+
+class PodmanMachinePresent(FixableRequirement):
+    suggest_msg = "podman machine (VM) not present"
+    fix_cmd = ["podman", "machine", "init", "--now"]
+
+    async def check(self):
+        machine_infos = await host.podman_machine_info()
+        if machine_infos and (machine_info := machine_infos[-1]):
+            return machine_info.get("Created") is not None
+        return False
+
+
+class PodmanMachineRunning(LocalFixableRequirement):
+    suggest_msg = "podman machine (VM) not running"
+    fix_cmd = ["podman", "machine", "start"]
+
+    async def check(self):
+        machine_infos = await host.podman_machine_info()
+        if machine_infos and (machine_info := machine_infos[-1]):
+            return machine_info.get("Running", False)
+        return False
 
 
 class PodmanGraphDriver(Requirement):
@@ -150,6 +162,12 @@ class PodmanVersion(Requirement):
 
 
 class PodmanRuntime(Requirement):
+    @property
+    def fix_cmd(self):
+        if self.host.os_type() != "darwin":
+            return ["sudo", self.host.package_manager(), "install", "-y", "crun"]
+        return []
+
     async def check(self):
         podman_info = await self.host.podman_info()
         storage_conf_path = podman_info["store"]["configFile"]
@@ -194,22 +212,31 @@ class SysctlValue(FixableRequirement):
 class PodmanDNSPlugin(FixableRequirement):
     suggest_msg = "Could not find the podman DNS plugin"
 
-    def __init__(self):
+    @property
+    def dns_plugin_path(self):
+        os_type = self.host.os_type()
+        if os_type in ["ubuntu", "debian"]:
+            return "/usr/lib/cni/dnsname"
+        return "/usr/libexec/cni/dnsname"
+
+    @property
+    def check_cmd(self):
+        return ["test", "-x", self.dns_plugin_path]
+
+    @property
+    def fix_cmd(self):
         os_type = self.host.os_type()
         if os_type == "centos":
-            dns_plugin_path = "/usr/libexec/cni/dnsname"
-            self.check_cmd = ["test", "-x", dns_plugin_path]
-            self.fix_cmd = ["sudo", "dnf", "install", "-y", dns_plugin_path]
+            return ["sudo", "dnf", "install", "-y", self.dns_plugin_path]
         elif os_type in ["ubuntu", "debian"]:
-            dns_plugin_path = "/usr/lib/cni/dnsname"
-            self.check_cmd = ["test", "-x", dns_plugin_path]
-            self.fix_cmd = [
+            return [
                 "sudo",
                 "apt",
                 "install",
                 "-y",
                 "golang-github-containernetworking-plugin-dnsname",
             ]
+        return []
 
 
 class FuseOverlayfsPresence(FixableRequirement):
@@ -234,6 +261,11 @@ class AppArmorProfile(FixableRequirement):
 async def check_requirements():
     if not await PodmanPlatform().evaluate():
         return False
+    if local_host.os_type() == "darwin":
+        if not await PodmanMachinePresent().evaluate():
+            return False
+        if not await PodmanMachineRunning().evaluate():
+            return False
 
     result = True
     # kernel and podman versions for native overlay filesystem

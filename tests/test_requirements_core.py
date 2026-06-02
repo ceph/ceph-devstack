@@ -1,7 +1,7 @@
 import asyncio
 import pytest
 from packaging.version import parse as parse_version
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 
 from ceph_devstack import config, requirements
@@ -15,6 +15,11 @@ def cls():
 @pytest.fixture(scope="class")
 def req(cls):
     return cls()
+
+
+@pytest.fixture(scope="class", params=["centos", "ubuntu", "debian"])
+def os_type(request):
+    return request.param
 
 
 class TestRequirement:
@@ -111,6 +116,73 @@ class TestLocalRequirement:
 
     def test_local_requirement_uses_local_host(self, req):
         assert req.host == requirements.local_host
+
+
+class TestPodmanPlatform:
+    @pytest.fixture(scope="class")
+    def cls(self):
+        return requirements.PodmanPlatform
+
+    async def test_podman_present(self, cls):
+        with (
+            patch(
+                "ceph_devstack.requirements.PodmanPlatform.host.podman_info"
+            ) as MockPodmanInfo,
+            patch("ceph_devstack.requirements.local_host") as MockLocalHost,
+        ):
+            MockLocalHost.os_type = MagicMock(return_value="darwin")
+            MockPodmanInfo.return_value = {}
+            req = cls()
+            assert await req.check() is True
+
+    async def test_podman_missing(self, cls):
+        with (
+            patch(
+                "ceph_devstack.requirements.PodmanPlatform.host.podman_info"
+            ) as MockPodmanInfo,
+            patch("ceph_devstack.requirements.local_host") as MockLocalHost,
+        ):
+            MockLocalHost.os_type = MagicMock(return_value="darwin")
+            MockPodmanInfo.side_effect = FileNotFoundError
+            req = cls()
+            assert await req.check() is False
+
+
+class TestPodmanMachinePresent:
+    @pytest.fixture(scope="class")
+    def cls(self):
+        return requirements.PodmanMachinePresent
+
+    @pytest.mark.parametrize(
+        "info,success", [[{}, False], [{"Created": "some_timestamp"}, True]]
+    )
+    async def test_podman_machine_present(self, cls, info, success):
+        with patch("ceph_devstack.requirements.host", AsyncMock()) as MockHost:
+            MockHost.podman_machine_info = AsyncMock(return_value=[info])
+            req = cls()
+            assert await req.check() is success
+
+
+class TestPodmanMachineRunning:
+    @pytest.fixture(scope="class")
+    def cls(self):
+        return requirements.PodmanMachineRunning
+
+    @pytest.mark.parametrize(
+        "info,success",
+        [[{}, False], [{"Running": False}, False], [{"Running": True}, True]],
+    )
+    async def test_podman_machine_running(self, cls, info, success):
+        with patch("ceph_devstack.requirements.host", AsyncMock()) as MockHost:
+            MockHost.podman_machine_info = AsyncMock(return_value=[info])
+            req = cls()
+            assert await req.check() is success
+
+
+class TestPodmanRuntime:
+    @pytest.fixture(scope="class")
+    def cls(self):
+        return requirements.PodmanRuntime
 
 
 class TestPodmanVersionInit:
@@ -223,10 +295,6 @@ class TestPodmanDNSPluginInit:
     def cls(self):
         return requirements.PodmanDNSPlugin
 
-    @pytest.fixture(scope="class", params=["centos", "ubuntu", "debian"])
-    def os_type(self, request):
-        return request.param
-
     @pytest.fixture(scope="class")
     def dns_plugin_path(self, os_type):
         if os_type == "centos":
@@ -281,12 +349,14 @@ class TestCheckRequirements:
 
     async def test_check_requirements_returns_false_on_overlay_failure(self):
         with (
+            patch("ceph_devstack.requirements.local_host") as MockLocalHost,
             patch("ceph_devstack.requirements.PodmanPlatform") as MockPlatform,
             patch("ceph_devstack.requirements.PodmanGraphDriver") as MockGraph,
             patch("ceph_devstack.requirements.PodmanVersion") as MockVersion,
             patch("ceph_devstack.requirements.KernelVersionForOverlay") as MockKernel,
             patch("ceph_devstack.requirements.CgroupV2") as MockCGroup,
         ):
+            MockLocalHost.os_type = MagicMock(return_value="centos")
             MockPlatform.return_value = AsyncMock(evaluate=AsyncMock(return_value=True))
             MockGraph.return_value = AsyncMock(evaluate=AsyncMock(return_value=False))
             MockVersion.return_value = AsyncMock(evaluate=AsyncMock(return_value=True))
@@ -297,6 +367,7 @@ class TestCheckRequirements:
 
     async def test_check_requirements_returns_true_when_all_pass(self):
         with (
+            patch("ceph_devstack.requirements.local_host") as MockLocalHost,
             patch("ceph_devstack.requirements.PodmanPlatform") as MockPlatform,
             patch("ceph_devstack.requirements.PodmanGraphDriver") as MockGraph,
             patch("ceph_devstack.requirements.PodmanVersion") as MockVersion,
@@ -309,6 +380,7 @@ class TestCheckRequirements:
             patch("ceph_devstack.requirements.host.selinux_enforcing") as mock_selinux,
             patch("ceph_devstack.requirements.SysctlValue") as MockSysctl,
         ):
+            MockLocalHost.os_type = MagicMock(return_value="centos")
             mock_platform = AsyncMock()
             mock_platform.evaluate = AsyncMock(return_value=True)
             MockPlatform.return_value = mock_platform
@@ -348,6 +420,7 @@ class TestCheckRequirements:
 
     async def test_check_requirements_returns_false_on_runtime_failure(self):
         with (
+            patch("ceph_devstack.requirements.local_host") as MockLocalHost,
             patch("ceph_devstack.requirements.PodmanPlatform") as MockPlatform,
             patch("ceph_devstack.requirements.PodmanGraphDriver") as MockGraph,
             patch("ceph_devstack.requirements.PodmanVersion") as MockVersion,
@@ -359,6 +432,7 @@ class TestCheckRequirements:
             patch("ceph_devstack.requirements.PodmanRuntime") as MockRuntime,
             patch("ceph_devstack.requirements.host.selinux_enforcing") as mock_selinux,
         ):
+            MockLocalHost.os_type = MagicMock(return_value="centos")
             mock_platform = AsyncMock()
             mock_platform.evaluate = AsyncMock(return_value=True)
             MockPlatform.return_value = mock_platform
@@ -394,6 +468,7 @@ class TestCheckRequirements:
 
     async def test_check_requirements_returns_false_on_selinux_bool_failure(self):
         with (
+            patch("ceph_devstack.requirements.local_host") as MockLocalHost,
             patch("ceph_devstack.requirements.PodmanPlatform") as MockPlatform,
             patch("ceph_devstack.requirements.PodmanGraphDriver") as MockGraph,
             patch("ceph_devstack.requirements.KernelVersionForOverlay") as MockKernel,
@@ -405,6 +480,7 @@ class TestCheckRequirements:
             patch("ceph_devstack.requirements.host.selinux_enforcing") as mock_selinux,
             patch("ceph_devstack.requirements.SELinuxBoolean") as MockSELinuxBoolean,
         ):
+            MockLocalHost.os_type = MagicMock(return_value="centos")
             mock_platform = AsyncMock()
             mock_platform.evaluate = AsyncMock(return_value=True)
             MockPlatform.return_value = mock_platform
@@ -445,6 +521,7 @@ class TestCheckRequirements:
 
     async def test_check_requirements_returns_false_on_sysctl_failure(self):
         with (
+            patch("ceph_devstack.requirements.local_host") as MockLocalHost,
             patch("ceph_devstack.requirements.PodmanPlatform") as MockPlatform,
             patch("ceph_devstack.requirements.PodmanGraphDriver") as MockGraph,
             patch("ceph_devstack.requirements.PodmanVersion") as MockVersion,
@@ -457,6 +534,7 @@ class TestCheckRequirements:
             patch("ceph_devstack.requirements.host.selinux_enforcing") as mock_selinux,
             patch("ceph_devstack.requirements.SysctlValue") as MockSysctl,
         ):
+            MockLocalHost.os_type = MagicMock(return_value="centos")
             mock_platform = AsyncMock()
             mock_platform.evaluate = AsyncMock(return_value=True)
             MockPlatform.return_value = mock_platform
