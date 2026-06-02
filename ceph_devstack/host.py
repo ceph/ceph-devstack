@@ -74,10 +74,15 @@ class Host:
 
     def os_type(self) -> str:
         if not hasattr(self, "_os_type"):
-            proc = self.run(["bash", "-c", ". /etc/os-release && echo $ID"])
-            assert proc.stdout is not None
-            assert proc.wait() == 0, "is /etc/os-release missing?"
-            self._os_type = proc.stdout.read().decode().strip().lower()
+            proc = self.run(["uname"])
+            assert proc.wait() == 0, "uname doesn't work?!"
+            if (uname_str := proc.stdout.read().decode().strip().lower()) == "linux":
+                proc = self.run(["bash", "-c", ". /etc/os-release && echo $ID"])
+                assert proc.stdout is not None
+                assert proc.wait() == 0, "is /etc/os-release missing?"
+                self._os_type = proc.stdout.read().decode().strip().lower()
+            else:
+                self._os_type = uname_str
         return self._os_type
 
     async def podman_info(self, force: bool = False) -> Dict:
