@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import os
 import pathlib
@@ -93,6 +94,13 @@ class Host:
             stdout = await proc.stdout.read()
             self._podman_info = yaml.safe_load(stdout.decode().strip())
         return self._podman_info
+
+    async def podman_machine_info(self) -> List[Dict]:
+        proc = await self.arun(["podman", "machine", "list", "--format", "json"])
+        assert proc.stdout is not None
+        await proc.wait()
+        stdout = await proc.stdout.read()
+        return json.loads(stdout)
 
     async def selinux_enforcing(self) -> bool:
         proc = await host.arun(["cat", "/sys/fs/selinux/enforce"])
