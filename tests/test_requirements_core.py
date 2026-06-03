@@ -283,15 +283,15 @@ class TestCheckRequirements:
         with (
             patch("ceph_devstack.requirements.PodmanPlatform") as MockPlatform,
             patch("ceph_devstack.requirements.PodmanGraphDriver") as MockGraph,
+            patch("ceph_devstack.requirements.PodmanVersion") as MockVersion,
+            patch("ceph_devstack.requirements.KernelVersionForOverlay") as MockKernel,
+            patch("ceph_devstack.requirements.CgroupV2") as MockCGroup,
         ):
-            mock_platform = AsyncMock()
-            mock_platform.evaluate = AsyncMock(return_value=True)
-            MockPlatform.return_value = mock_platform
-
-            mock_graph = AsyncMock()
-            mock_graph.evaluate = AsyncMock(return_value=False)
-            MockGraph.return_value = mock_graph
-
+            MockPlatform.return_value = AsyncMock(evaluate=AsyncMock(return_value=True))
+            MockGraph.return_value = AsyncMock(evaluate=AsyncMock(return_value=False))
+            MockVersion.return_value = AsyncMock(evaluate=AsyncMock(return_value=True))
+            MockKernel.return_value = AsyncMock(evaluate=AsyncMock(return_value=True))
+            MockCGroup.return_value = AsyncMock(evaluate=AsyncMock(return_value=True))
             result = await requirements.check_requirements()
             assert result is False
 
