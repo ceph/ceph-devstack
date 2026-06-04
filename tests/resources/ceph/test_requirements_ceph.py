@@ -216,15 +216,11 @@ class TestCephDevStackCheckRequirements:
             ) as MockLoopCtrlWrite,
             patch("ceph_devstack.host.host.selinux_enforcing") as mock_selinux,
         ):
-            mock_has_sudo = AsyncMock()
-            mock_has_sudo.evaluate = AsyncMock(return_value=True)
-            MockHasSudo.return_value = mock_has_sudo
-            mock_loop_ctrl = AsyncMock()
-            mock_loop_ctrl.evaluate = AsyncMock(return_value=True)
-            MockLoopCtrl.return_value = mock_loop_ctrl
-            mock_loop_ctrl_write = AsyncMock()
-            mock_loop_ctrl_write.evaluate = AsyncMock(return_value=True)
-            MockLoopCtrlWrite.return_value = mock_loop_ctrl_write
+            MockHasSudo.return_value = AsyncMock(evaluate=AsyncMock(return_value=True))
+            MockLoopCtrl.return_value = AsyncMock(evaluate=AsyncMock(return_value=True))
+            MockLoopCtrlWrite.return_value = AsyncMock(
+                evaluate=AsyncMock(return_value=True)
+            )
             mock_selinux.return_value = False
             result = await devstack.check_requirements()
             assert result is True
@@ -247,15 +243,11 @@ class TestCephDevStackCheckRequirements:
             patch("ceph_devstack.host.host.selinux_enforcing") as mock_selinux,
             patch("ceph_devstack.host.host.path_exists") as mock_path_exists,
         ):
-            mock_has_sudo = AsyncMock()
-            mock_has_sudo.evaluate = AsyncMock(return_value=True)
-            MockHasSudo.return_value = mock_has_sudo
-            mock_loop_ctrl = AsyncMock()
-            mock_loop_ctrl.evaluate = AsyncMock(return_value=True)
-            MockLoopCtrl.return_value = mock_loop_ctrl
-            mock_loop_ctrl_write = AsyncMock()
-            mock_loop_ctrl_write.evaluate = AsyncMock(return_value=True)
-            MockLoopCtrlWrite.return_value = mock_loop_ctrl_write
+            MockHasSudo.return_value = AsyncMock(evaluate=AsyncMock(return_value=True))
+            MockLoopCtrl.return_value = AsyncMock(evaluate=AsyncMock(return_value=True))
+            MockLoopCtrlWrite.return_value = AsyncMock(
+                evaluate=AsyncMock(return_value=True)
+            )
             mock_selinux.return_value = False
             mock_path_exists.return_value = False
             result = await devstack.check_requirements()
