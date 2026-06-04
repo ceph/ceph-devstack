@@ -86,6 +86,15 @@ class Host:
                 self._os_type = uname_str
         return self._os_type
 
+    def package_manager(self) -> str | None:
+        if self.os_type in ["centos", "rhel", "alma", "rocky", "fedora"]:
+            return "dnf"
+        elif self.os_type in ["debian", "ubuntu"]:
+            return "apt"
+        elif self.os_type == "darwin":
+            return "brew"
+        raise RuntimeError("Can't determine package manager")
+
     async def podman_info(self, force: bool = False) -> Dict:
         if force or not hasattr(self, "_podman_info"):
             proc = await self.arun(["podman", "info"])
