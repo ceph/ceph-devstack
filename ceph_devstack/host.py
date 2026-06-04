@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import os
 import pathlib
@@ -74,11 +75,25 @@ class Host:
 
     def os_type(self) -> str:
         if not hasattr(self, "_os_type"):
-            proc = self.run(["bash", "-c", ". /etc/os-release && echo $ID"])
-            assert proc.stdout is not None
-            assert proc.wait() == 0, "is /etc/os-release missing?"
-            self._os_type = proc.stdout.read().decode().strip().lower()
+            proc = self.run(["uname"])
+            assert proc.wait() == 0, "uname doesn't work?!"
+            if (uname_str := proc.stdout.read().decode().strip().lower()) == "linux":
+                proc = self.run(["bash", "-c", ". /etc/os-release && echo $ID"])
+                assert proc.stdout is not None
+                assert proc.wait() == 0, "is /etc/os-release missing?"
+                self._os_type = proc.stdout.read().decode().strip().lower()
+            else:
+                self._os_type = uname_str
         return self._os_type
+
+    def package_manager(self) -> str | None:
+        if self.os_type in ["centos", "rhel", "alma", "rocky", "fedora"]:
+            return "dnf"
+        elif self.os_type in ["debian", "ubuntu"]:
+            return "apt"
+        elif self.os_type == "darwin":
+            return "brew"
+        raise RuntimeError("Can't determine package manager")
 
     async def podman_info(self, force: bool = False) -> Dict:
         if force or not hasattr(self, "_podman_info"):
@@ -88,6 +103,13 @@ class Host:
             stdout = await proc.stdout.read()
             self._podman_info = yaml.safe_load(stdout.decode().strip())
         return self._podman_info
+
+    async def podman_machine_info(self) -> List[Dict]:
+        proc = await self.arun(["podman", "machine", "list", "--format", "json"])
+        assert proc.stdout is not None
+        await proc.wait()
+        stdout = await proc.stdout.read()
+        return json.loads(stdout)
 
     async def selinux_enforcing(self) -> bool:
         proc = await host.arun(["cat", "/sys/fs/selinux/enforce"])

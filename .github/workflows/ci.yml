@@ -30,22 +30,20 @@ jobs:
       - uses: actions/checkout@v2
       - name: Install packages
         run: sudo apt-get update && sudo apt-get install podman golang-github-containernetworking-plugin-dnsname sqlite3 jq
-      - name: Create virtualenv
-        run: python3 -m venv venv
-      - name: Install
-        run: ./venv/bin/pip3 install -e .
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
       - name: Set owner for /dev/loop-control
         run: sudo chown $(whoami) /dev/loop-control
       - name: Configure
-        run: ./venv/bin/ceph-devstack config set containers.postgres.count 0
+        run: uv run ceph-devstack config set containers.postgres.count 0
       - name: Doctor
-        run: ./venv/bin/ceph-devstack -v doctor --fix
+        run: uv run ceph-devstack -v doctor --fix
       - name: Build
-        run: ./venv/bin/ceph-devstack -v build
+        run: uv run ceph-devstack -v build
       - name: Create
-        run: ./venv/bin/ceph-devstack -v create
+        run: uv run ceph-devstack -v create
       - name: Start
-        run: ./venv/bin/ceph-devstack -v start
+        run: uv run ceph-devstack -v start
       - name: Check Status
         run: podman ps -a
       - name: Check ssh access to testnode container
@@ -54,7 +52,7 @@ jobs:
         if: failure()
         run: podman exec testnode_0 journalctl
       - name: Wait
-        run: ./venv/bin/ceph-devstack wait teuthology
+        run: uv run ceph-devstack wait teuthology
       - name: Dump logs
         if: success() || failure()
         run: podman logs -f teuthology
@@ -84,6 +82,6 @@ jobs:
           name: archive
           path: /tmp/artifacts/archive.tar
       - name: Stop
-        run: ./venv/bin/ceph-devstack -v stop
+        run: uv run ceph-devstack -v stop
       - name: Remove
-        run: ./venv/bin/ceph-devstack -v remove
+        run: uv run ceph-devstack -v remove
