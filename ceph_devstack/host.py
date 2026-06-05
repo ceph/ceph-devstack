@@ -73,6 +73,7 @@ class Host:
             self._kernel_version = parse_version(raw_version.split("-")[0])
         return self._kernel_version
 
+    @property
     def os_type(self) -> str:
         if not hasattr(self, "_os_type"):
             proc = self.run(["uname"])
