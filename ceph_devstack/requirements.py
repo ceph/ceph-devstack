@@ -1,6 +1,5 @@
 import shlex
 
-from pathlib import Path
 from packaging.version import parse as parse_version, Version
 from typing import List
 
@@ -161,7 +160,9 @@ class PodmanVersion(Requirement):
         return True
 
 
-class PodmanRuntime(Requirement):
+class PodmanRuntime(FixableRequirement):
+    suggest_msg = "Could not find the 'crun' container runtime"
+
     @property
     def fix_cmd(self):
         if self.host.os_type != "darwin":
@@ -170,19 +171,8 @@ class PodmanRuntime(Requirement):
 
     async def check(self):
         podman_info = await self.host.podman_info()
-        storage_conf_path = podman_info["store"]["configFile"]
         runtime = podman_info["host"]["ociRuntime"]["name"]
-        if runtime == "crun":
-            return True
-        else:
-            containers_conf_path = Path(storage_conf_path).parent / "containers.conf"
-            cmd = host.cmd(["podman", "system", "reset"])
-            logger.error(
-                f"The configured runtime is '{runtime}'. "
-                f"It must be set to 'crun' in {containers_conf_path}. "
-                f"Afterward, run '{cmd}'."
-            )
-            return False
+        return runtime == "crun"
 
 
 class SELinuxBoolean(FixableRequirement):
