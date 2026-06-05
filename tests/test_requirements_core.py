@@ -1,7 +1,7 @@
 import asyncio
 import pytest
 from packaging.version import parse as parse_version
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
 
 
 from ceph_devstack import config, requirements
@@ -303,7 +303,10 @@ class TestPodmanDNSPluginInit:
             return "/usr/lib/cni/dnsname"
 
     def test_podman_dns_plugin_config(self, cls, os_type, dns_plugin_path):
-        with patch.object(cls.host, "os_type", return_value=os_type):
+        with patch(
+            "ceph_devstack.host.Host.os_type", new_callable=PropertyMock
+        ) as MockHost:
+            MockHost.return_value = os_type
             req = cls()
             assert req.check_cmd == ["test", "-x", dns_plugin_path]
 

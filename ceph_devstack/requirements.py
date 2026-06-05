@@ -56,7 +56,7 @@ class PodmanPlatform(LocalFixableRequirement):
 
     @property
     def fix_cmd(self):
-        host_os = self.host.os_type()
+        host_os = self.host.os_type
         if host_os == "darwin":
             return ["brew", "install", "podman"]
         return ["sudo", host.package_manager(), "install", "-y", "podman"]
@@ -164,7 +164,7 @@ class PodmanVersion(Requirement):
 class PodmanRuntime(Requirement):
     @property
     def fix_cmd(self):
-        if self.host.os_type() != "darwin":
+        if self.host.os_type != "darwin":
             return ["sudo", self.host.package_manager(), "install", "-y", "crun"]
         return []
 
@@ -214,7 +214,7 @@ class PodmanDNSPlugin(FixableRequirement):
 
     @property
     def dns_plugin_path(self):
-        os_type = self.host.os_type()
+        os_type = self.host.os_type
         if os_type in ["ubuntu", "debian"]:
             return "/usr/lib/cni/dnsname"
         return "/usr/libexec/cni/dnsname"
@@ -225,7 +225,7 @@ class PodmanDNSPlugin(FixableRequirement):
 
     @property
     def fix_cmd(self):
-        os_type = self.host.os_type()
+        os_type = self.host.os_type
         if os_type == "centos":
             return ["sudo", "dnf", "install", "-y", self.dns_plugin_path]
         elif os_type in ["ubuntu", "debian"]:
@@ -261,7 +261,7 @@ class AppArmorProfile(FixableRequirement):
 async def check_requirements():
     if not await PodmanPlatform().evaluate():
         return False
-    if local_host.os_type() == "darwin":
+    if local_host.os_type == "darwin":
         if not await PodmanMachinePresent().evaluate():
             return False
         if not await PodmanMachineRunning().evaluate():
