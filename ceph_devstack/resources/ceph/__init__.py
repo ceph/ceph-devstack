@@ -243,7 +243,7 @@ class CephDevStack:
             logger.error(msg)
         else:
             if locate:
-                print(log_file)
+                print(str(log_file).replace(str(pathlib.Path.home()), "~"))
             else:
                 buffer_size = 8 * 1024
                 with open(log_file) as f:
