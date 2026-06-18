@@ -1,5 +1,7 @@
+import pathlib
 import re
 from datetime import datetime
+from typing import List
 
 from ceph_devstack.resources.ceph.exceptions import TooManyJobsFound
 
@@ -14,24 +16,16 @@ def get_logtimestamp(dirname: str) -> datetime:
     return datetime.strptime(match_.group("timestamp"), "%Y-%m-%d_%H:%M:%S")
 
 
-def get_most_recent_run(runs: list[str]) -> str:
-    try:
-        run_name = next(
-            iter(
-                sorted(
-                    (
-                        dirname
-                        for dirname in runs
-                        if RUN_DIRNAME_PATTERN.search(dirname)
-                    ),
-                    key=lambda dirname: get_logtimestamp(dirname),
-                    reverse=True,
-                )
-            )
-        )
-        return run_name
-    except StopIteration as e:
-        raise FileNotFoundError from e
+def get_runs(directory: pathlib.Path) -> List[pathlib.Path]:
+    return sorted(
+        (
+            dir_
+            for dir_ in directory.expanduser().absolute().iterdir()
+            if RUN_DIRNAME_PATTERN.search(dir_.name)
+        ),
+        key=lambda dir_: dir_.stat().st_mtime,
+        reverse=True,
+    )
 
 
 def get_job_id(jobs: list[str]):

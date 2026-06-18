@@ -11,7 +11,6 @@ import pytest
 from ceph_devstack import config
 from ceph_devstack.resources.ceph.utils import (
     get_logtimestamp,
-    get_most_recent_run,
     get_job_id,
 )
 from ceph_devstack.resources.ceph.exceptions import TooManyJobsFound
@@ -22,18 +21,6 @@ class TestDevStack:
     def test_get_logtimestamp(self):
         dirname = "root-2025-03-20_18:34:43-orch:cephadm:smoke-small-main-distro-default-testnode"
         assert get_logtimestamp(dirname) == datetime(2025, 3, 20, 18, 34, 43)
-
-    def test_get_most_recent_run_returns_most_recent_run(self):
-        runs = [
-            "root-2024-02-07_12:23:43-orch:cephadm:smoke-small-devlop-distro-smithi-testnode",
-            "root-2025-02-20_11:23:43-orch:cephadm:smoke-small-devlop-distro-smithi-testnode",
-            "root-2025-03-20_18:34:43-orch:cephadm:smoke-small-main-distro-default-testnode",
-            "root-2025-01-18_18:34:43-orch:cephadm:smoke-small-main-distro-default-testnode",
-        ]
-        assert (
-            get_most_recent_run(runs)
-            == "root-2025-03-20_18:34:43-orch:cephadm:smoke-small-main-distro-default-testnode"
-        )
 
     def test_get_job_id_returns_job_on_unique_job(self):
         jobs = ["97"]

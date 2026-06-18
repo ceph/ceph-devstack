@@ -24,7 +24,7 @@ from ceph_devstack.resources.ceph.requirements import (
     LoopControlDeviceWriteable,
     SELinuxModule,
 )
-from ceph_devstack.resources.ceph.utils import get_most_recent_run, get_job_id
+from ceph_devstack.resources.ceph.utils import get_runs
 from ceph_devstack.resources.ceph.exceptions import TooManyJobsFound
 
 
@@ -250,15 +250,24 @@ class CephDevStack:
                     while chunk := f.read(buffer_size):
                         print(chunk, end="")
 
-    def get_log_file(self, run_name: str = "", job_id: str = ""):
-        archive_dir = Teuthology().archive_dir.expanduser()
+    def get_log_file(self, run_name: str = "", job_id: str = "") -> pathlib.Path:
+        archive_dir = Teuthology().archive_dir
 
         if not run_name:
-            run_name = get_most_recent_run(os.listdir(archive_dir))
-        run_dir = archive_dir.joinpath(run_name)
+            runs = get_runs(archive_dir)
+            if not runs:
+                raise FileNotFoundError
+            run_dir = runs[0]
+        else:
+            run_dir = archive_dir.joinpath(run_name)
 
         if not job_id:
-            job_id = get_job_id(os.listdir(run_dir))
+            jobs = sorted(
+                [dir_.name for dir_ in run_dir.iterdir() if str(dir_.name).isdigit()]
+            )
+            if not jobs:
+                raise FileNotFoundError
+            job_id = jobs[0]
 
         log_file = run_dir.joinpath(job_id, "teuthology.log")
         if not log_file.exists():
