@@ -411,7 +411,7 @@ class Teuthology(Container):
     }
 
     @property
-    def archive_dir(self):
+    def archive_dir(self) -> Path:
         return Path(config["data_dir"]) / "archive"
 
     async def create(self):
