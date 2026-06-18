@@ -1,3 +1,4 @@
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -205,44 +206,27 @@ class TestCephDevStackGetLogFile:
             with pytest.raises(FileNotFoundError):
                 devstack.get_log_file(run_name, "1")
 
-    def test_get_log_file_uses_most_recent_when_no_run_name(self, tmp_path):
+    def test_get_log_file_uses_most_recent_when_no_run_name(
+        self, tmp_path, create_log_file
+    ):
         devstack = CephDevStack()
         archive_dir = tmp_path / "archive"
         archive_dir.mkdir()
 
-        # Create two runs
-        older_run = "root-2024-01-01_00:00:00-orch:cephadm:smoke-small-main-distro-default-testnode"
-        newer_run = "root-2025-01-01_00:00:00-orch:cephadm:smoke-small-main-distro-default-testnode"
-
-        older_dir = archive_dir / older_run
-        older_dir.mkdir()
-        older_job = older_dir / "1"
-        older_job.mkdir()
-        (older_job / "teuthology.log").write_text("old log")
-
-        newer_dir = archive_dir / newer_run
-        newer_dir.mkdir()
-        newer_job = newer_dir / "1"
-        newer_job.mkdir()
-        log_file = newer_job / "teuthology.log"
-        log_file.write_text("new log")
-
-        # Override listdir behavior
-        def mock_listdir(path):
-            if str(path) == str(archive_dir):
-                return [older_run, newer_run]
-            if str(path) == str(newer_dir):
-                return ["1"]
-            return []
+        create_log_file(
+            tmp_path, timestamp=datetime(year=2024, month=1, day=1), content="old log"
+        )
+        new_log_file = create_log_file(
+            tmp_path, timestamp=datetime(year=2025, month=1, day=1), content="new log"
+        )
 
         with patch("ceph_devstack.resources.ceph.Teuthology") as MockTeuthology:
             mock_teuthology = MagicMock()
             mock_teuthology.archive_dir = archive_dir
             MockTeuthology.return_value = mock_teuthology
 
-            with patch("os.listdir", side_effect=mock_listdir):
-                result = devstack.get_log_file("", "")
-                assert str(result) == str(log_file)
+            result = devstack.get_log_file("", "")
+            assert str(result) == str(new_log_file)
 
     def test_get_log_file_raises_too_many_jobs_when_multiple_and_no_job_id(
         self, tmp_path
