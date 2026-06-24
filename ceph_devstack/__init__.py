@@ -159,8 +159,8 @@ class Config(dict):
             try:
                 obj = obj[sub_path]
             except KeyError:
-                logger.error(f"{name} not found in config")
-                raise
+                logger.debug(f"{name} not found in config")
+                return ""
             i += 1
         if isinstance(obj, (str, int, bool)):
             return str(obj)
