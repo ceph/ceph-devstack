@@ -88,6 +88,15 @@ class TestConfigSet:
         assert test_config["containers"]["testnode"]["count"] == new_count
 
 
+class TestConfigUnset:
+    def test_unset_value_simple_key(self, test_config):
+        test_config.set_value("test_key", "test_value")
+        assert "test_key" in test_config
+        assert test_config["test_key"] == "test_value"
+        test_config.unset_value("test_key")
+        assert "test_key" not in test_config
+
+
 class TestConfigDefaults:
     def test_config_defaults(self):
         assert config == {
