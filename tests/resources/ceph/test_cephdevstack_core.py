@@ -14,7 +14,6 @@ from ceph_devstack.resources.ceph.containers import (
     TestNode as _TestNode,
     Teuthology,
 )
-from ceph_devstack.resources.ceph.exceptions import TooManyJobsFound
 
 
 class TestCephDevStackServiceSpecs:
@@ -209,26 +208,18 @@ class TestCephDevStackGetLogFile:
     def test_get_log_file_uses_most_recent_when_no_run_name(
         self, tmp_path, create_log_file
     ):
-        devstack = CephDevStack()
-        archive_dir = tmp_path / "archive"
-        archive_dir.mkdir()
-
+        config["data_dir"] = str(tmp_path)
         create_log_file(
             tmp_path, timestamp=datetime(year=2024, month=1, day=1), content="old log"
         )
         new_log_file = create_log_file(
             tmp_path, timestamp=datetime(year=2025, month=1, day=1), content="new log"
         )
+        devstack = CephDevStack()
+        result = devstack.get_log_file("", "")
+        assert str(result) == str(new_log_file)
 
-        with patch("ceph_devstack.resources.ceph.Teuthology") as MockTeuthology:
-            mock_teuthology = MagicMock()
-            mock_teuthology.archive_dir = archive_dir
-            MockTeuthology.return_value = mock_teuthology
-
-            result = devstack.get_log_file("", "")
-            assert str(result) == str(new_log_file)
-
-    def test_get_log_file_raises_too_many_jobs_when_multiple_and_no_job_id(
+    def test_get_log_file_returns_latest_job_log_when_multiple_and_no_job_id(
         self, tmp_path
     ):
         devstack = CephDevStack()
@@ -253,17 +244,7 @@ class TestCephDevStackGetLogFile:
             mock_teuthology = MagicMock()
             mock_teuthology.archive_dir = archive_dir
             MockTeuthology.return_value = mock_teuthology
-
-            def mock_listdir(path):
-                if str(path) == str(run_dir):
-                    return ["1", "2"]
-                return []
-
-            with (
-                patch("os.listdir", side_effect=mock_listdir),
-                pytest.raises(TooManyJobsFound),
-            ):
-                devstack.get_log_file(run_name, "")
+            assert devstack.get_log_file(run_name, "").parent.name == "2"
 
 
 class TestCephDevStackRemove:

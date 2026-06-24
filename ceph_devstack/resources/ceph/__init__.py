@@ -24,8 +24,7 @@ from ceph_devstack.resources.ceph.requirements import (
     LoopControlDeviceWriteable,
     SELinuxModule,
 )
-from ceph_devstack.resources.ceph.utils import get_runs
-from ceph_devstack.resources.ceph.exceptions import TooManyJobsFound
+from ceph_devstack.resources.ceph.utils import get_runs, get_jobs
 
 
 class SSHKeyPair(Secret):
@@ -236,11 +235,6 @@ class CephDevStack:
             log_file = self.get_log_file(run_name, job_id)
         except FileNotFoundError:
             logger.error("No log file found")
-        except TooManyJobsFound as e:
-            msg = "Found too many jobs ({jobs}) for target run. Please pick a job id with -j option.".format(
-                jobs=", ".join(e.jobs)
-            )
-            logger.error(msg)
         else:
             if locate:
                 print(str(log_file).replace(str(pathlib.Path.home()), "~"))
@@ -262,12 +256,10 @@ class CephDevStack:
             run_dir = archive_dir.joinpath(run_name)
 
         if not job_id:
-            jobs = sorted(
-                [dir_.name for dir_ in run_dir.iterdir() if str(dir_.name).isdigit()]
-            )
+            jobs = get_jobs(run_dir)
             if not jobs:
                 raise FileNotFoundError
-            job_id = jobs[0]
+            job_id = jobs[0].name
 
         log_file = run_dir.joinpath(job_id, "teuthology.log")
         if not log_file.exists():

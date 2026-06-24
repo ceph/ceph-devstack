@@ -11,9 +11,8 @@ import pytest
 from ceph_devstack import config
 from ceph_devstack.resources.ceph.utils import (
     get_logtimestamp,
-    get_job_id,
+    get_jobs,
 )
-from ceph_devstack.resources.ceph.exceptions import TooManyJobsFound
 from ceph_devstack.resources.ceph import CephDevStack
 
 
@@ -22,20 +21,17 @@ class TestDevStack:
         dirname = "root-2025-03-20_18:34:43-orch:cephadm:smoke-small-main-distro-default-testnode"
         assert get_logtimestamp(dirname) == datetime(2025, 3, 20, 18, 34, 43)
 
-    def test_get_job_id_returns_job_on_unique_job(self):
-        jobs = ["97"]
-        assert get_job_id(jobs) == "97"
+    def test_get_jobs_returns_job_on_unique_job(self, tmp_path):
+        temp_dir_path = pathlib.Path(tmp_path)
+        job_path = temp_dir_path / "97"
+        job_path.mkdir()
+        result = get_jobs(temp_dir_path)
+        assert len(result) == 1
+        assert result[0].name == "97"
 
-    def test_get_job_id_throws_filenotfound_on_missing_job(self):
-        jobs = []
+    def test_get_jobs_throws_filenotfound_on_missing_job(self):
         with pytest.raises(FileNotFoundError):
-            get_job_id(jobs)
-
-    def test_get_job_id_throws_toomanyjobsfound_on_more_than_one_job(self):
-        jobs = ["1", "2"]
-        with pytest.raises(TooManyJobsFound) as exc:
-            get_job_id(jobs)
-        assert exc.value.jobs == jobs
+            get_jobs(pathlib.Path("/fake/path"))
 
     async def test_logs_command_display_log_file_of_latest_run(
         self, tmp_path, create_log_file
