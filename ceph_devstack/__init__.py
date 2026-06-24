@@ -166,7 +166,7 @@ class Config(dict):
             return str(obj)
         return tomlkit.dumps(obj).strip()
 
-    def set_value(self, name: str, value: str) -> None:
+    def set_value(self, name: str, value: str) -> str:
         path = name.split(".")
         obj = self.user_obj
         i = 0
@@ -187,6 +187,7 @@ class Config(dict):
                 self.user_path.parent.mkdir(exist_ok=True)
                 self.user_path.write_text(tomlkit.dumps(self.user_obj).strip())
             i += 1
+        return str(item)
 
     def unset_value(self, name: str) -> None:
         path = name.split(".")
