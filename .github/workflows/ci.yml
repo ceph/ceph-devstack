@@ -10,7 +10,7 @@ jobs:
     name: Check code style
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v7
       - name: Install precommit
         run: pip install pre-commit
       - name: Check lint
@@ -27,7 +27,7 @@ jobs:
           - os: ubuntu-24.04
             python: "3.12"
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v7
       - name: Install packages
         run: sudo apt-get update && sudo apt-get install podman golang-github-containernetworking-plugin-dnsname sqlite3 jq
       - name: Install uv
@@ -70,7 +70,7 @@ jobs:
           sqlite3 /tmp/dev.db ".output stdout" ".mode json" "select * from jobs" | jq | tee /tmp/artifacts/jobs.json
       - name: Upload jobs.json
         if: success() || failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: jobs
           path: /tmp/artifacts/jobs.json
@@ -80,7 +80,7 @@ jobs:
           tar -czf /tmp/artifacts/archive.tar ~/.local/share/ceph-devstack/archive/
       - name: Upload log archive
         if: success() || failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: archive
           path: /tmp/artifacts/archive.tar
