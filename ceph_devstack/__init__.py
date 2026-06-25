@@ -50,6 +50,8 @@ def parse_args(args: List[str]) -> argparse.Namespace:
     parser_config_set = subparsers_config.add_parser("set")
     parser_config_set.add_argument("name")
     parser_config_set.add_argument("value")
+    parser_config_unset = subparsers_config.add_parser("unset")
+    parser_config_unset.add_argument("name")
     parser_doc = subparsers.add_parser(
         "doctor", help="Check that the system meets requirements"
     )
@@ -129,6 +131,8 @@ class Config(dict):
     __slots__ = ["user_obj", "user_path"]
 
     def load(self, config_path: Path | None = None):
+        args = self.get("args")
+        self.clear()
         parsed = tomlkit.parse((Path(__file__).parent / "config.toml").read_text())
         self.update(parsed)
         if config_path:
@@ -140,6 +144,8 @@ class Config(dict):
                 raise OSError(f"Config file at {self.user_path} not found!")
             else:
                 self.user_obj = {}
+        if args:
+            self["args"] = args
 
     def dump(self):
         return tomlkit.dumps(self)
@@ -181,6 +187,24 @@ class Config(dict):
                 self.user_path.parent.mkdir(exist_ok=True)
                 self.user_path.write_text(tomlkit.dumps(self.user_obj).strip())
             i += 1
+
+    def unset_value(self, name: str) -> None:
+        path = name.split(".")
+        obj = self.user_obj
+        i = 0
+        last_index = len(path) - 1
+        while i <= last_index:
+            if i < last_index:
+                if path[i] not in obj:
+                    break
+                obj = obj[path[i]]
+            elif i == last_index:
+                obj.pop(path[i])
+                self.update(self.user_obj)
+                self.user_path.parent.mkdir(exist_ok=True)
+                self.user_path.write_text(tomlkit.dumps(self.user_obj).strip())
+            i += 1
+        self.load(self.user_path)
 
 
 config = Config()

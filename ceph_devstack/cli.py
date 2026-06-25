@@ -12,6 +12,7 @@ CONFIG_HANDLERS = {
     "dump": lambda config, args: print(config.dump()),
     "get": lambda config, args: print(config.get_value(args.name)),
     "set": lambda config, args: print(config.set_value(args.name, args.value)),
+    "unset": lambda config, args: config.unset_value(args.name),
 }
 
 COMMAND_HANDLERS = {

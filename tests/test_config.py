@@ -1,6 +1,16 @@
+import pytest
 import tomlkit
 
 from ceph_devstack import config, Config
+
+
+@pytest.fixture(scope="function")
+def test_config(tmp_path) -> Config:
+    test_config = Config()
+    config_file = tmp_path / "test_config.toml"
+    config_file.write_text("")
+    test_config.load(config_file)
+    return test_config
 
 
 class TestConfigDump:
@@ -54,48 +64,37 @@ class TestConfigGetValue:
 
 
 class TestConfigSet:
-    def test_set_value_simple_key(self, tmp_path):
-        test_config = Config()
-        config_file = tmp_path / "test_config.toml"
-        config_file.write_text("")
-        test_config.load(config_file)
+    def test_set_value_simple_key(self, test_config):
         test_config.set_value("test_key", "test_value")
         assert test_config["test_key"] == "test_value"
 
-    def test_set_value_nested_key(self, tmp_path):
-        test_config = Config()
-        config_file = tmp_path / "test_config.toml"
-        config_file.write_text("")
-        test_config.load(config_file)
+    def test_set_value_nested_key(self, test_config):
         test_config.set_value("test_section.test_key", "test_value")
         assert test_config["test_section"]["test_key"] == "test_value"
 
-    def test_set_value_updates_user_obj(self, tmp_path):
-        test_config = Config()
-        config_file = tmp_path / "test_config.toml"
-        config_file.write_text("")
-        test_config.load(config_file)
+    def test_set_value_updates_user_obj(self, test_config):
         test_config.set_value("new_key", "new_value")
         assert "new_key" in test_config.user_obj
 
-    def test_set_value_creates_intermediate_sections(self, tmp_path):
-        test_config = Config()
-        config_file = tmp_path / "test_config.toml"
-        config_file.write_text("")
-        test_config.load(config_file)
+    def test_set_value_creates_intermediate_sections(self, test_config):
         test_config.set_value("deep.nested.key", "value")
         assert test_config.user_obj["deep"]["nested"]["key"] == "value"
 
-    def test_set_value_overrides_existing(self, tmp_path):
-        test_config = Config()
-        config_file = tmp_path / "test_config.toml"
-        config_file.write_text("")
-        test_config.load(config_file)
+    def test_set_value_overrides_existing(self, test_config):
         original_count = test_config["containers"]["testnode"]["count"]
         new_count = original_count + 2
         test_config.set_value("containers.testnode.count", str(new_count))
         assert test_config["containers"]["testnode"]["count"] != original_count
         assert test_config["containers"]["testnode"]["count"] == new_count
+
+
+class TestConfigUnset:
+    def test_unset_value_simple_key(self, test_config):
+        test_config.set_value("test_key", "test_value")
+        assert "test_key" in test_config
+        assert test_config["test_key"] == "test_value"
+        test_config.unset_value("test_key")
+        assert "test_key" not in test_config
 
 
 class TestConfigDefaults:
