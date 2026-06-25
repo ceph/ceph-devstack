@@ -53,9 +53,12 @@ jobs:
         run: podman exec testnode_0 journalctl
       - name: Wait
         run: uv run ceph-devstack wait teuthology
-      - name: Dump logs
+      - name: Dump dispatcher log
         if: success() || failure()
         run: podman logs -f teuthology
+      - name: Dump job log
+        if: success() || failure()
+        run: uv run ceph-devstack logs
       - name: Create archive
         if: success() || failure()
         run: |
