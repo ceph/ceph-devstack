@@ -10,10 +10,11 @@ from ceph_devstack.resources import PodmanResource
 
 class TestPodmanResource:
     @pytest.fixture(scope="class")
+    @classmethod
     def cls(self):
         return PodmanResource
 
-    @pytest.fixture(scope="class", params=["create", "remove"])
+    @pytest.fixture(scope="function", params=["create", "remove"])
     def action(self, request):
         return request.param
 

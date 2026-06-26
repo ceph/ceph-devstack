@@ -1,4 +1,4 @@
-name: tox
+name: pytest
 
 on:
   pull_request:
@@ -8,26 +8,22 @@ on:
 
 jobs:
   test:
-    name: tox on python${{ matrix.python }} via ${{ matrix.os }}
+    name: pytest on python${{ matrix.python }} via ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         include:
-          - os: ubuntu-22.04
-            python: "3.10"
-          - os: ubuntu-22.04
-            python: "3.11"
           - os: ubuntu-24.04
             python: "3.12"
-          - os: ubuntu-24.04
-            python: "3.13"
+          - os: ubuntu-26.04
+            python: "3.14"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6.3.0
         with:
           python-version: ${{ matrix.python }}
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
       - name: Run unit tests
-        run: uv run --extra test tox
+        run: uv run --all-extras pytest

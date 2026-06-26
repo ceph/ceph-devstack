@@ -10,7 +10,7 @@ jobs:
     name: Check code style
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v7
       - name: Install precommit
         run: pip install pre-commit
       - name: Check lint
@@ -26,8 +26,10 @@ jobs:
         include:
           - os: ubuntu-24.04
             python: "3.12"
+          - os: ubuntu-26.04
+            python: "3.14"
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v7
       - name: Install packages
         run: sudo apt-get update && sudo apt-get install podman golang-github-containernetworking-plugin-dnsname sqlite3 jq
       - name: Install uv
@@ -53,9 +55,12 @@ jobs:
         run: podman exec testnode_0 journalctl
       - name: Wait
         run: uv run ceph-devstack wait teuthology
-      - name: Dump logs
+      - name: Dump dispatcher log
         if: success() || failure()
         run: podman logs -f teuthology
+      - name: Dump job log
+        if: success() || failure()
+        run: uv run ceph-devstack logs
       - name: Create archive
         if: success() || failure()
         run: |
@@ -67,7 +72,7 @@ jobs:
           sqlite3 /tmp/dev.db ".output stdout" ".mode json" "select * from jobs" | jq | tee /tmp/artifacts/jobs.json
       - name: Upload jobs.json
         if: success() || failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: jobs
           path: /tmp/artifacts/jobs.json
@@ -77,7 +82,7 @@ jobs:
           tar -czf /tmp/artifacts/archive.tar ~/.local/share/ceph-devstack/archive/
       - name: Upload log archive
         if: success() || failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: archive
           path: /tmp/artifacts/archive.tar

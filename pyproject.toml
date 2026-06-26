@@ -12,7 +12,7 @@ classifiers = [
 ]
 keywords = ["podman", "ceph"]
 description = "Run a full teuthology lab on your laptop!"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 dependencies = ["packaging", "pre-commit", "PyYAML", "tomlkit"]
 dynamic = ["version"]
 
@@ -45,3 +45,8 @@ requires = [
     "wheel",
     "setuptools-scm>=8",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"

@@ -24,6 +24,7 @@ def os_type(request):
 
 class TestRequirement:
     @pytest.fixture(scope="class")
+    @classmethod
     def cls(self):
         class TestReq(requirements.Requirement):
             check_cmd = ["test", "command"]
@@ -53,6 +54,7 @@ class TestRequirement:
 
 class TestFixableRequirement:
     @pytest.fixture(scope="class")
+    @classmethod
     def cls(self):
         class TestReq(requirements.FixableRequirement):
             check_cmd = ["test", "-f", "/tmp/testfile"]
@@ -108,6 +110,7 @@ class TestFixableRequirement:
 
 class TestLocalRequirement:
     @pytest.fixture(scope="class")
+    @classmethod
     def cls(self):
         class TestReq(requirements.LocalRequirement):
             check_cmd = ["test"]
@@ -120,6 +123,7 @@ class TestLocalRequirement:
 
 class TestPodmanPlatform:
     @pytest.fixture(scope="class")
+    @classmethod
     def cls(self):
         return requirements.PodmanPlatform
 
@@ -150,6 +154,7 @@ class TestPodmanPlatform:
 
 class TestPodmanMachinePresent:
     @pytest.fixture(scope="class")
+    @classmethod
     def cls(self):
         return requirements.PodmanMachinePresent
 
@@ -165,6 +170,7 @@ class TestPodmanMachinePresent:
 
 class TestPodmanMachineRunning:
     @pytest.fixture(scope="class")
+    @classmethod
     def cls(self):
         return requirements.PodmanMachineRunning
 
@@ -181,16 +187,19 @@ class TestPodmanMachineRunning:
 
 class TestPodmanRuntime:
     @pytest.fixture(scope="class")
+    @classmethod
     def cls(self):
         return requirements.PodmanRuntime
 
 
 class TestPodmanVersionInit:
     @pytest.fixture(scope="class")
+    @classmethod
     def cls(self):
         return requirements.PodmanVersion
 
-    @pytest.fixture(scope="class")
+    @pytest.fixture(scope="function")
+    @classmethod
     def req(self, cls):
         return cls("4.0.0")
 
@@ -204,10 +213,11 @@ class TestPodmanVersionInit:
 
 class TestSysctlValueInit:
     @pytest.fixture(scope="class")
+    @classmethod
     def cls(self):
         return requirements.SysctlValue
 
-    @pytest.fixture(scope="class")
+    @pytest.fixture(scope="function")
     def req(self, cls):
         return cls("fs.aio-max-nr", 2097152)
 
@@ -223,10 +233,11 @@ class TestSysctlValueInit:
 
 class TestSELinuxBooleanInit:
     @pytest.fixture(scope="class")
+    @classmethod
     def cls(self):
         return requirements.SELinuxBoolean
 
-    @pytest.fixture(scope="class")
+    @pytest.fixture(scope="function")
     def req(self, cls):
         return cls("test_bool")
 
@@ -242,6 +253,7 @@ class TestSELinuxBooleanInit:
 
 class TestFuseOverlayfsPresence:
     @pytest.fixture(scope="class")
+    @classmethod
     def cls(self):
         return requirements.FuseOverlayfsPresence
 
@@ -257,6 +269,7 @@ class TestFuseOverlayfsPresence:
 
 class TestCgroupV2Properties:
     @pytest.fixture(scope="class")
+    @classmethod
     def cls(self):
         return requirements.CgroupV2
 
@@ -274,6 +287,7 @@ class TestCgroupV2Properties:
 
 class TestCgroupV2Check:
     @pytest.fixture(scope="class")
+    @classmethod
     def cls(self):
         return requirements.CgroupV2
 
@@ -292,10 +306,11 @@ class TestCgroupV2Check:
 
 class TestPodmanDNSPluginInit:
     @pytest.fixture(scope="class")
+    @classmethod
     def cls(self):
         return requirements.PodmanDNSPlugin
 
-    @pytest.fixture(scope="class")
+    @pytest.fixture(scope="function")
     def dns_plugin_path(self, os_type):
         if os_type == "centos":
             return "/usr/libexec/cni/dnsname"
@@ -313,6 +328,7 @@ class TestPodmanDNSPluginInit:
 
 class TestAppArmorProfile:
     @pytest.fixture(scope="class")
+    @classmethod
     def cls(self):
         return requirements.AppArmorProfile
 
@@ -328,6 +344,7 @@ class TestAppArmorProfile:
 
 class TestFixableRequirementSuggestMsg:
     @pytest.fixture(scope="class")
+    @classmethod
     def cls(self):
         class TestReq(requirements.FixableRequirement):
             check_cmd = ["test"]
