@@ -1,4 +1,4 @@
-name: tox
+name: pytest
 
 on:
   pull_request:
@@ -8,7 +8,7 @@ on:
 
 jobs:
   test:
-    name: tox on python${{ matrix.python }} via ${{ matrix.os }}
+    name: pytest on python${{ matrix.python }} via ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -30,4 +30,4 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
       - name: Run unit tests
-        run: uv run --extra test tox
+        run: uv run --all-extras pytest
