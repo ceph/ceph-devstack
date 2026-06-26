@@ -68,6 +68,9 @@ class TestConfigSet:
         test_config.set_value("test_key", "test_value")
         assert test_config["test_key"] == "test_value"
 
+    def test_set_value_returns_value(self, test_config):
+        assert test_config.set_value("test_key", "test_value") == "test_value"
+
     def test_set_value_nested_key(self, test_config):
         test_config.set_value("test_section.test_key", "test_value")
         assert test_config["test_section"]["test_key"] == "test_value"
