@@ -11,10 +11,11 @@ from .test_podmanresource import (
 
 class TestMiscResource(_TestPodmanResource):
     @pytest.fixture(scope="class", params=[Network, Secret])
+    @classmethod
     def cls(self, request):
         return request.param
 
-    @pytest.fixture(scope="class", params=["create", "exists", "remove"])
+    @pytest.fixture(scope="function", params=["create", "exists", "remove"])
     def action(self, request):
         return request.param
 

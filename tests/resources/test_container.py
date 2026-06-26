@@ -27,7 +27,7 @@ class TestContainerResource(_TestPodmanResource, _TestContainerBase):
         return Container
 
     @pytest.fixture(
-        scope="class", params=["build", "create", "start", "stop", "remove"]
+        scope="function", params=["build", "create", "start", "stop", "remove"]
     )
     def action(self, request):
         return request.param

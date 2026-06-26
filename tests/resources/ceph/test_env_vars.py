@@ -8,10 +8,12 @@ ANY_VALUE = "ANY_VALUE"
 
 class _TestContainerEnvVars:
     @pytest.fixture(scope="class")
+    @classmethod
     def cls(self):
         raise NotImplementedError
 
     @pytest.fixture(scope="class")
+    @classmethod
     def env_vars(self):
         # return {}
         raise NotImplementedError
@@ -28,10 +30,12 @@ class _TestContainerEnvVars:
 
 class TestPostgres(_TestContainerEnvVars):
     @pytest.fixture(scope="class")
+    @classmethod
     def cls(self):
         return containers.Postgres
 
     @pytest.fixture(scope="class")
+    @classmethod
     def env_vars(self):
         return {
             "POSTGRES_USER": "root",
@@ -44,10 +48,12 @@ class TestPostgres(_TestContainerEnvVars):
 
 class TestPaddles(_TestContainerEnvVars):
     @pytest.fixture(scope="class")
+    @classmethod
     def cls(self):
         return containers.Paddles
 
     @pytest.fixture(scope="class")
+    @classmethod
     def env_vars(self):
         return {
             "PADDLES_SERVER_HOST": "0.0.0.0",
@@ -56,10 +62,12 @@ class TestPaddles(_TestContainerEnvVars):
 
 class TestPulpito(_TestContainerEnvVars):
     @pytest.fixture(scope="class")
+    @classmethod
     def cls(self):
         return containers.Pulpito
 
     @pytest.fixture(scope="class")
+    @classmethod
     def env_vars(self):
         return {
             "PULPITO_PADDLES_ADDRESS": "http://paddles:8080",
@@ -68,10 +76,12 @@ class TestPulpito(_TestContainerEnvVars):
 
 class TestTestNode(_TestContainerEnvVars):
     @pytest.fixture(scope="class")
+    @classmethod
     def cls(self):
         return containers.TestNode
 
     @pytest.fixture(scope="class")
+    @classmethod
     def env_vars(self):
         return {
             "CEPH_VOLUME_ALLOW_LOOP_DEVICES": "true",
@@ -80,10 +90,12 @@ class TestTestNode(_TestContainerEnvVars):
 
 class TestTeuthology(_TestContainerEnvVars):
     @pytest.fixture(scope="class")
+    @classmethod
     def cls(self):
         return containers.Teuthology
 
     @pytest.fixture(scope="class")
+    @classmethod
     def env_vars(self):
         return {
             "SSH_PRIVKEY": "",
@@ -102,9 +114,11 @@ class TestTeuthology(_TestContainerEnvVars):
 
 class TestBeanstalk(_TestContainerEnvVars):
     @pytest.fixture(scope="class")
+    @classmethod
     def cls(self):
         return containers.Beanstalk
 
     @pytest.fixture(scope="class")
+    @classmethod
     def env_vars(self):
         return {}

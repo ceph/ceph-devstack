@@ -8,6 +8,7 @@ from ceph_devstack import config
 
 class TestTestnode:
     @pytest.fixture(scope="class")
+    @classmethod
     def cls(self) -> type[_TestNode]:
         return _TestNode
 
