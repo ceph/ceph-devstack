@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import argparse
-import asyncio
 import json
 import os
 import subprocess
@@ -9,6 +8,7 @@ from pathlib import Path
 from subprocess import CalledProcessError
 from typing import List, Dict, Set
 
+from ceph_devstack.exec import Subprocess
 from ceph_devstack.host import host, local_host
 
 
@@ -56,15 +56,13 @@ class PodmanResource:
         check: bool = False,
         force_local: bool = False,
         stream_output: bool = False,
-    ) -> asyncio.subprocess.Process:
+    ) -> Subprocess:
         exec_host = local_host if force_local else host
         proc = await exec_host.arun(
             args,
             cwd=Path(self.cwd),
             stream_output=stream_output,
         )
-        assert proc.stderr is not None
-        assert proc.stdout is not None
         returncode = await proc.wait()
         if check and returncode != 0:
             # out = await proc.stderr.read()

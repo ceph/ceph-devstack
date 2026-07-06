@@ -1,26 +1,74 @@
 import asyncio
 from asyncio.subprocess import SubprocessStreamProtocol
+import contextlib
 import functools
 import os
 import pathlib
+import psutil
+import signal
 import subprocess
 
 from typing import Dict, List, Optional
 
 from ceph_devstack import logger, VERBOSE
 
+_TERMINATE_TIMEOUT = 3.0
+_KILL_TIMEOUT = 1.0
 
-class LoggingStreamProtocol(asyncio.subprocess.SubprocessStreamProtocol):
-    def __init__(self, limit, loop, log_level):
-        self.log_level = log_level
-        super().__init__(limit=limit, loop=loop)
 
-    def pipe_data_received(self, fd, data):
-        logger.log(
-            self.log_level,
-            (data.decode() if isinstance(data, bytes) else str(data)).rstrip("\n"),
-        )
-        super().pipe_data_received(fd, data)
+class Subprocess(asyncio.subprocess.Process):
+    async def _close_transport(self) -> None:
+        transport = getattr(self, "_transport", None)
+        if transport is not None and not transport.is_closing():
+            transport.close()
+
+    async def _wait_for_exit(self, timeout: float) -> None:
+        with contextlib.suppress(asyncio.TimeoutError, asyncio.CancelledError):
+            await asyncio.wait_for(asyncio.shield(super().wait()), timeout=timeout)
+
+    async def _terminate(self) -> None:
+        if self.returncode is not None:
+            await self._close_transport()
+            return
+        self.signal_children(signal.SIGTERM, recursive=True)
+        with contextlib.suppress(ProcessLookupError):
+            self.kill()
+        await self._wait_for_exit(_TERMINATE_TIMEOUT)
+        if self.returncode is None:
+            self.signal_children(signal.SIGKILL, recursive=True)
+        with contextlib.suppress(ProcessLookupError):
+            self.kill()
+        await self._wait_for_exit(_KILL_TIMEOUT)
+        await self._close_transport()
+
+    async def wait(self) -> int:
+        try:
+            return await super().wait()
+        except asyncio.CancelledError:
+            await self._terminate()
+            raise
+
+    async def communicate(self, input=None):
+        try:
+            return await super().communicate(input)
+        except asyncio.CancelledError:
+            await self._terminate()
+            raise
+
+    def child_pids(self, recursive=True):
+        if self.pid is None:
+            return []
+        return [
+            child.pid
+            for child in psutil.Process(self.pid).children(recursive=recursive)
+        ]
+
+    def signal_children(self, signal: signal.Signals, recursive=True):
+        for pid in self.child_pids(recursive=recursive):
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(pid, signal)
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(pid, signal)
 
 
 class Command:
@@ -57,37 +105,28 @@ class Command:
         proc.wait()
         return proc
 
-    async def arun(self) -> asyncio.subprocess.Process:
+    async def arun(self) -> Subprocess:
         logger.log(VERBOSE, self._make_log_msg())
         loop = asyncio.get_running_loop()
-        protocol_factory: (
-            functools.partial[SubprocessStreamProtocol]
-            | functools.partial[LoggingStreamProtocol]
-        )
+        kwargs = dict(self.kwargs)
         if self.stream_output:
-            protocol_factory = functools.partial(
-                LoggingStreamProtocol,
-                limit=2**16,
-                loop=loop,
-                log_level=VERBOSE,
-            )
-        else:
-            protocol_factory = functools.partial(
-                asyncio.subprocess.SubprocessStreamProtocol,
-                limit=2**16,
-                loop=loop,
-            )
+            # Inherit stdout/stderr so long-running commands (e.g. dnf builddep)
+            # are not blocked when their output exceeds the StreamReader limit.
+            kwargs["stdout"] = None
+            kwargs["stderr"] = None
+        protocol_factory = functools.partial(
+            SubprocessStreamProtocol,
+            limit=2**16,
+            loop=loop,
+        )
         transport, protocol = await loop.subprocess_exec(
             protocol_factory,
             *self.args,
             env=self.env,
-            **self.kwargs,
+            start_new_session=True,
+            **kwargs,
         )
-        return asyncio.subprocess.Process(
-            transport,
-            protocol,
-            loop,
-        )
+        return Subprocess(transport, protocol, loop)
 
     def __str__(self):
         return " ".join(self.args)
