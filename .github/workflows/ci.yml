@@ -90,3 +90,24 @@ jobs:
         run: uv run ceph-devstack -v stop
       - name: Remove
         run: uv run ceph-devstack -v remove
+  ceph-stack:
+    name: Ceph stack integration on ${{ matrix.os }} (python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    needs: lint
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            python: "3.12"
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install packages
+        run: sudo apt-get update && sudo apt-get install podman golang-github-containernetworking-plugin-dnsname curl
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+      - name: Set owner for /dev/loop-control
+        run: sudo chown $(whoami) /dev/loop-control
+      - name: Ceph stack integration test
+        env:
+          CEPH_DEVSTACK_INTEGRATION: "1"
+        run: bash tests/integration/test_ceph_stack.sh

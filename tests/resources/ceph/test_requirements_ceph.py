@@ -227,10 +227,10 @@ class TestCephDevStackCheckRequirements:
 
     async def test_check_requirements_returns_false_when_repo_missing(self):
         devstack = CephDevStack()
-        devstack.service_specs = {}
         config["containers"] = {
             "custom": {"repo": "/nonexistent/path"},
         }
+        devstack.service_specs = {"custom": {}}
 
         with (
             patch("ceph_devstack.resources.ceph.HasSudo") as MockHasSudo,

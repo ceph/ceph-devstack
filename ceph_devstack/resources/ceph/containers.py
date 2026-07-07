@@ -181,9 +181,7 @@ class TestNode(Container):
         self.index = 0
         if "_" in self.name:
             self.index = int(self.name.split("_")[-1])
-        self.loop_device_count = config["containers"]["testnode"].get(
-            "loop_device_count", 1
-        )
+        self.loop_device_count = self.config.get("loop_device_count", 1)
         self.devices = [self.device_name(i) for i in range(self.loop_device_count)]
 
     @property
@@ -274,7 +272,7 @@ class TestNode(Container):
             await self.remove_loop_device(device)
 
     async def create_loop_device(self, device: str):
-        size = config["containers"]["testnode"]["loop_device_size"]
+        size = self.config.get("loop_device_size", "5G")
         os.makedirs(self.loop_img_dir, exist_ok=True)
         proc = await self.cmd(["lsmod", "|", "grep", "loop"])
         if proc and await proc.wait() != 0:

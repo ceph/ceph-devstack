@@ -1,3 +1,4 @@
+import logging
 import pytest
 
 from pathlib import Path
@@ -54,7 +55,13 @@ class TestPodmanResource:
             print(m_arun.await_args_list)
             m_arun.assert_awaited_once_with(["0"], cwd=Path("."), stream_output=False)
 
-    async def test_cmd_failed(self, cls):
+    async def test_cmd_failed(self, cls, caplog):
         obj = cls()
-        with pytest.raises(CalledProcessError):
-            await obj.cmd(["false"], check=True)
+        with caplog.at_level(logging.ERROR), pytest.raises(CalledProcessError):
+            await obj.cmd(
+                ["/bin/sh", "-c", "echo podman-failure >&2; exit 1"],
+                check=True,
+                force_local=True,
+            )
+        assert "Command failed (1)" in caplog.text
+        assert "podman-failure" in caplog.text

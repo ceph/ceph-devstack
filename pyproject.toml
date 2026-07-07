@@ -38,6 +38,9 @@ ceph-devstack = "ceph_devstack.cli:main"
 [tool.setuptools]
 include-package-data = true
 
+[tool.setuptools.package-data]
+"ceph_devstack.resources.ceph" = ["*.sh"]
+
 [tool.setuptools.packages.find]
 namespaces = false
 
@@ -56,3 +59,6 @@ requires = [
 testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "integration: integration tests requiring podman (deselect with '-m \"not integration\"')",
+]

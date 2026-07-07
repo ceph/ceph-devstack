@@ -19,6 +19,7 @@ from ceph_devstack.resources.ceph.containers import (
 class TestCephDevStackServiceSpecs:
     def test_service_specs_includes_all_services(self):
         devstack = CephDevStack()
+        assert devstack.stack_name == "teuthology"
         assert "postgres" in devstack.service_specs
         assert "paddles" in devstack.service_specs
         assert "beanstalk" in devstack.service_specs
@@ -260,16 +261,15 @@ class TestCephDevStackRemove:
             mock_network_instance = MagicMock()
             mock_network_instance.remove = AsyncMock()
             MockNetwork.return_value = mock_network_instance
-            with patch("ceph_devstack.resources.ceph.SSHKeyPair") as MockSecret:
-                mock_secret_instance = MagicMock()
-                mock_secret_instance.remove = AsyncMock()
-                MockSecret.return_value = mock_secret_instance
-                with patch("ceph_devstack.logger.info"):
-                    await devstack.remove()
-                    mock_postgres.remove.assert_called_once()
-                    mock_paddles.remove.assert_called_once()
-                    mock_network_instance.remove.assert_called_once()
-                    mock_secret_instance.remove.assert_called_once()
+            mock_secret = MagicMock()
+            mock_secret.remove = AsyncMock()
+            devstack.secrets = [MagicMock(return_value=mock_secret)]
+            with patch("ceph_devstack.logger.info"):
+                await devstack.remove()
+                mock_postgres.remove.assert_called_once()
+                mock_paddles.remove.assert_called_once()
+                mock_network_instance.remove.assert_called_once()
+                mock_secret.remove.assert_called_once()
 
 
 class TestCephDevStackStop:
@@ -422,3 +422,37 @@ class TestCephDevStackInit:
         devstack = CephDevStack()
         assert "archive" in devstack.service_specs
         assert "postgres" not in devstack.service_specs
+
+
+class TestCephDevStackStacks:
+    def test_custom_stack_limits_services(self, tmp_path):
+        config_file = tmp_path / "config.toml"
+        config_file.write_text(
+            """
+[stacks.minimal]
+services = ["postgres", "paddles"]
+"""
+        )
+        config.load(config_file)
+        devstack = CephDevStack(stack_name="minimal")
+        assert devstack.stack_name == "minimal"
+        assert set(devstack.service_specs) == {"postgres", "paddles"}
+
+    def test_ceph_stack_has_expected_services(self):
+        devstack = CephDevStack(stack_name="ceph")
+        assert devstack.stack_name == "ceph"
+        assert set(devstack.service_specs) == {"ceph_node"}
+        assert devstack.secrets == []
+
+    async def test_ceph_stack_create_prepares_node(self):
+        devstack = CephDevStack(stack_name="ceph")
+        mock_node = AsyncMock()
+        devstack.service_specs = {
+            "ceph_node": {"count": 1, "objects": [mock_node]},
+        }
+        with patch("ceph_devstack.resources.ceph.CephDevStackNetwork") as MockNetwork:
+            mock_network = MagicMock()
+            mock_network.create = AsyncMock()
+            MockNetwork.return_value = mock_network
+            await devstack.create()
+            mock_node.create.assert_awaited_once()

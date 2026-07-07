@@ -41,6 +41,11 @@ def parse_args(args: List[str]) -> argparse.Namespace:
         default=DEFAULT_CONFIG_PATH,
         help="Path to the ceph-devstack config file",
     )
+    parser.add_argument(
+        "--stack",
+        default=None,
+        help="Stack to deploy (default: value of 'stack' in config)",
+    )
     subparsers = parser.add_subparsers(dest="command")
     parser_config = subparsers.add_parser("config", help="Get or set config items")
     subparsers_config = parser_config.add_subparsers(dest="config_op")
@@ -128,7 +133,9 @@ def deep_merge(*maps):
 
 
 class Config(dict):
-    __slots__ = ["user_obj", "user_path"]
+    __slots__ = ["user_obj", "user_path", "active_stack", "active_services"]
+    active_stack: str | None
+    active_services: list[str]
 
     def load(self, config_path: Path | None = None):
         args = self.get("args")
@@ -146,6 +153,30 @@ class Config(dict):
                 self.user_obj = {}
         if args:
             self["args"] = args
+        self.active_stack = None
+        self.active_services: list[str] = []
+
+    def apply_stack(self, stack_name: str | None = None) -> list[str]:
+        if stack_name is None:
+            default = self.get("stack", "teuthology")
+            stack_name = default if isinstance(default, str) else "teuthology"
+        stacks = self.get("stacks", {})
+        if stack_name not in stacks:
+            known = ", ".join(sorted(stacks)) or "(none)"
+            raise ValueError(f"Unknown stack {stack_name!r}; known stacks: {known}")
+        stack = stacks[stack_name]
+        self.active_stack = stack_name
+        self.active_services = list(stack.get("services", []))
+
+        overrides = {}
+        for key in ("data_dir", "containers", "env"):
+            if key in stack:
+                overrides[key] = stack[key]
+        if overrides:
+            merged = deep_merge(self, overrides)
+            for key in overrides:
+                self[key] = merged[key]
+        return self.active_services
 
     def dump(self):
         return tomlkit.dumps(self)

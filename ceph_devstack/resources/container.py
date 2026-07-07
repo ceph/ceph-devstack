@@ -46,8 +46,12 @@ class Container(PodmanResource):
         return args
 
     @property
+    def config_key(self) -> str:
+        return self.__class__.__name__.lower()
+
+    @property
     def config(self):
-        return config["containers"].get(self.__class__.__name__.lower(), {})
+        return config["containers"].get(self.config_key, {})
 
     @property
     def image_name(self) -> str:
@@ -70,14 +74,32 @@ class Container(PodmanResource):
     @property
     def repo(self):
         repo = self.config.get("repo", "")
+        if not repo:
+            return ""
         try:
             return repo.expanduser()
         except AttributeError:
             return os.path.expanduser(repo)
 
     @property
+    def build_dir(self):
+        build_dir = self.config.get("build_dir", "")
+        if not build_dir:
+            return ""
+        try:
+            return build_dir.expanduser()
+        except AttributeError:
+            return os.path.expanduser(build_dir)
+
+    @property
     def cwd(self):
+        if self.build_dir:
+            return self.build_dir
         return self.repo or "."
+
+    @property
+    def should_build(self):
+        return bool(self.repo)
 
     async def pull(self):
         if not getattr(self, "pull_cmd", None):
@@ -92,9 +114,9 @@ class Container(PodmanResource):
         )
 
     async def build(self):
-        if not getattr(self, "repo", None):
+        if not self.should_build:
             return
-        logger.debug(f"{self.name}: building from repo: {self.repo}")
+        logger.debug(f"{self.name}: building from {self.cwd}")
         await self.cmd(
             self.format_cmd(self.build_cmd),
             check=True,

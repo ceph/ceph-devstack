@@ -8,7 +8,7 @@ import psutil
 import signal
 import subprocess
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from ceph_devstack import logger, VERBOSE
 
@@ -69,6 +69,25 @@ class Subprocess(asyncio.subprocess.Process):
                 os.kill(pid, signal)
             with contextlib.suppress(ProcessLookupError):
                 os.killpg(pid, signal)
+
+    async def collect_output(self) -> Tuple[str, str]:
+        stdout = b""
+        stderr = b""
+        if self.stdout is not None:
+            stdout = await self.stdout.read()
+        if self.stderr is not None:
+            stderr = await self.stderr.read()
+        return stdout.decode(), stderr.decode()
+
+    async def log_failure(self, cmd: List[str]) -> Tuple[str, str]:
+        stdout, stderr = await self.collect_output()
+        returncode = self.returncode if self.returncode is not None else -1
+        logger.error(f"Command failed ({returncode}): {' '.join(cmd)}")
+        for line in stderr.rstrip("\n").splitlines():
+            logger.error(line)
+        for line in stdout.rstrip("\n").splitlines():
+            logger.error(line)
+        return stdout, stderr
 
 
 class Command:

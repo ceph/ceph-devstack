@@ -125,3 +125,4 @@ allow container_init_t tun_tap_device_t:chr_file mounton;
 
 allow container_t user_tmp_t:sock_file write;
 allow container_t unconfined_t:unix_stream_socket connectto;
+allow container_t fixed_disk_device_t:blk_file setattr;
