@@ -59,6 +59,59 @@ python3 -m pip install git+https://github.com/zmc/ceph-devstack.git
 
 `ceph-devstack config dump` will output the current configuration.
 
+### Shared block pool (optional)
+
+To back loop devices with slices of a real NVMe device instead of sparse files,
+configure `[block_pool]` in your config. The pool is shared across `ceph_node`
+and all `testnode_*` containers. Each loop device uses that container's
+`loop_device_size` for its backing region on the pool parent.
+
+```toml
+[block_pool]
+parent = "/dev/nvme0n1p1"   # or a dedicated whole disk
+allow_enroll = true         # first run only; unset afterward
+
+[containers.ceph_node]
+loop_device_size = "5G"
+
+[containers.testnode]
+loop_device_size = "5G"
+```
+
+Requirements:
+
+* Your user must be in the `disk` group and able to read/write the parent
+  device directly (enrollment writes a tail marker to the raw device).
+* The parent must be empty, or already enrolled by ceph-devstack (tail marker
+  at the end of the device).
+
+`ceph-devstack block-pool status` shows current allocations.
+
+Each container picks host loop devices at create time: it needs
+`loop_device_count` devices of `loop_device_size`, reuses any existing backing
+files for that container name, then takes the lowest free loop numbers after
+scanning what is already attached or claimed under `data_dir/disk_images`.
+
+If `block_pool.json` is lost but the on-disk marker remains, delete the state
+file and start again; the pool reclaims the marker without reformatting the
+device.
+
+### Ceph stack
+
+To run a single-container local Ceph cluster instead of teuthology:
+
+```bash
+ceph-devstack --stack ceph pull
+ceph-devstack --stack ceph create
+ceph-devstack --stack ceph start
+podman logs -f ceph_node
+podman exec ceph_node ceph -c /var/lib/ceph-devstack/cluster/ceph.conf -s
+```
+
+The dashboard listens on port 8080 by default (`admin` / `admin`). Set
+`dashboard_show_password = true` under `[containers.ceph_node]` to print the
+password in the container log.
+
 As an example, the following configuration will use a local image for paddles with the tag `TEST`; it will also create ten testnode containers; and will build its teuthology container from the git repo at `~/src/teuthology`:
 ```
 containers:

@@ -12,6 +12,8 @@ from typing import List
 
 from ceph_devstack import PROJECT_ROOT, config, logger
 from ceph_devstack.host import host
+from ceph_devstack.resources.ceph.block_devices import BlockDeviceProvisioner
+from ceph_devstack.resources.ceph.host_loops import allocate_loop_devices
 from ceph_devstack.resources.container import Container
 
 
@@ -145,17 +147,17 @@ class CephNode(Container):
 
     def __init__(self, name: str = ""):
         super().__init__(name)
-        self.loop_device_count = self.config.get("loop_device_count", 3)
-        self.devices = [self._device_name(i) for i in range(self.loop_device_count)]
+        self.loop_device_count = self.config["loop_device_count"]
+        self._devices: list[str] | None = None
+        self._block_device_provisioner: BlockDeviceProvisioner | None = None
 
     @property
-    def loop_device_base(self) -> int:
-        if "loop_device_base" in self.config:
-            return int(self.config["loop_device_base"])
-        testnode = config.get("containers", {}).get("testnode", {})
-        count = int(testnode.get("count", 0) or 0)
-        per_node = int(testnode.get("loop_device_count", 1) or 1)
-        return count * per_node
+    def devices(self) -> list[str]:
+        if self._devices is None:
+            self._devices = allocate_loop_devices(
+                self.name, self.loop_device_count, self.loop_img_dir
+            )
+        return self._devices
 
     @property
     def config_key(self) -> str:
@@ -369,6 +371,8 @@ class CephNode(Container):
             f"DASHBOARD_PASSWORD={self.dashboard_password}",
             "-e",
             f"DASHBOARD_SHOW_PASSWORD={'true' if self.dashboard_show_password else 'false'}",
+            "-e",
+            f"CONTAINER_NAME={self.name}",
             "--entrypoint",
             "/bin/bash",
             "--name",
@@ -377,9 +381,6 @@ class CephNode(Container):
             "-c",
             f". {shlex.quote(entrypoint)}",
         ]
-
-    def _device_name(self, index: int) -> str:
-        return f"/dev/loop{self.loop_device_base + index}"
 
     def _device_image(self, device: str) -> str:
         return f"{self.name}-{device.removeprefix('/dev/loop')}"
@@ -630,7 +631,7 @@ class CephNode(Container):
         await self.label_cluster_dir()
         logger.info(
             f"{self.name}: creating {self.loop_device_count} loop devices "
-            f"({self.config.get('loop_device_size', '5G')} each)"
+            f"({self.config['loop_device_size']} each)"
         )
         await self.create_loop_devices()
         await super().create()
@@ -667,75 +668,27 @@ class CephNode(Container):
             await asyncio.sleep(5)
         return 1
 
+    def _block_provisioner(self) -> BlockDeviceProvisioner:
+        if self._block_device_provisioner is None:
+            self._block_device_provisioner = BlockDeviceProvisioner(
+                self.name,
+                image_dir=self.loop_img_dir,
+                file_size=self.config["loop_device_size"],
+                cmd=self.cmd,
+                trigger_udev=True,
+            )
+        return self._block_device_provisioner
+
     async def create_loop_devices(self):
-        for device in self.devices:
-            await self.create_loop_device(device)
+        if self.devices:
+            numbers = [int(device.removeprefix("/dev/loop")) for device in self.devices]
+            logger.info(
+                f"{self.name}: host loop devices "
+                f"{numbers[0]}-{numbers[-1]} "
+                f"({self.config['loop_device_size']} each)"
+            )
+        await self._block_provisioner().create_devices(self.devices)
 
     async def remove_loop_devices(self):
-        for device in self.devices:
-            await self.remove_loop_device(device)
-
-    async def create_loop_device(self, device: str):
-        size = self.config.get("loop_device_size", "5G")
-        os.makedirs(self.loop_img_dir, exist_ok=True)
-        proc = await self.cmd(
-            ["bash", "-c", "lsmod | grep -q loop"],
-            check=False,
-        )
-        if proc and await proc.wait() != 0:
-            await self.cmd(["sudo", "modprobe", "loop"])
-        loop_img_name = self.loop_img_dir / self._device_image(device)
-        await self.remove_loop_device(device)
-        device_pos = device.removeprefix("/dev/loop")
-        await self.cmd(
-            [
-                "sudo",
-                "mknod",
-                "-m700",
-                device,
-                "b",
-                "7",
-                device_pos,
-            ],
-            check=True,
-        )
-        await self.cmd(
-            ["sudo", "chown", f"{os.getuid()}:{os.getgid()}", device],
-            check=True,
-        )
-        await self.cmd(
-            [
-                "sudo",
-                "dd",
-                "if=/dev/null",
-                f"of={loop_img_name}",
-                "bs=1",
-                "count=0",
-                f"seek={size}",
-            ],
-            check=True,
-        )
-        await self.cmd(["sudo", "losetup", device, str(loop_img_name)], check=True)
-        await self.cmd(["chcon", "-t", "fixed_disk_device_t", device])
-        device_pos = device.removeprefix("/dev/loop")
-        await self.cmd(
-            [
-                "sudo",
-                "udevadm",
-                "trigger",
-                "--action=add",
-                f"--name=block/loop{device_pos}",
-            ],
-            check=False,
-        )
-        await self.cmd(["sudo", "udevadm", "settle"], check=False)
-
-    async def remove_loop_device(self, device: str):
-        loop_img_name = self.loop_img_dir / self._device_image(device)
-        if os.path.ismount(device):
-            await self.cmd(["umount", device], check=True)
-        if host.path_exists(device):
-            await self.cmd(["sudo", "losetup", "-d", device])
-            await self.cmd(["sudo", "rm", "-f", device], check=True)
-        if loop_img_name.exists():
-            loop_img_name.unlink()
+        await self._block_provisioner().remove_devices(self.devices)
+        self._devices = None

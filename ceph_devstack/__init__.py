@@ -66,6 +66,11 @@ def parse_args(args: List[str]) -> argparse.Namespace:
         default=False,
         help="Apply suggested fixes for issues found",
     )
+    parser_block_pool = subparsers.add_parser(
+        "block-pool", help="Inspect the shared block device pool"
+    )
+    block_pool_subparsers = parser_block_pool.add_subparsers(dest="block_pool_op")
+    block_pool_subparsers.add_parser("status", help="Show pool allocations and state")
     parser_pull = subparsers.add_parser("pull", help="Pull container images")
     parser_pull.add_argument(
         "image",

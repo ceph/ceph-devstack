@@ -1,5 +1,6 @@
-from ceph_devstack import logger, PROJECT_ROOT
+from ceph_devstack import logger, PROJECT_ROOT, config
 from ceph_devstack.requirements import Requirement, FixableRequirement
+import os
 
 
 class HasSudo(Requirement):
@@ -40,6 +41,39 @@ class LoopControlDeviceWriteable(FixableRequirement):
             logger.warning(
                 "Note that group modifications require a logout to take effect."
             )
+
+
+class BlockPoolDiskGroup(Requirement):
+    suggest_msg = "block pool parent requires membership in the disk group"
+
+    async def check(self) -> bool:
+        from ceph_devstack.block_pool import BlockPool
+
+        if BlockPool.from_config(config) is None:
+            return True
+        proc = await self.host.arun(["bash", "-c", "id -nG | grep -qw disk"])
+        if await proc.wait() == 0:
+            return True
+        logger.error(f"{self.suggest_msg}. Try: sudo usermod -a -G disk $USER")
+        return False
+
+
+class BlockPoolParentAccessible(Requirement):
+    suggest_msg = "block pool parent must be readable and writable by this user"
+
+    async def check(self) -> bool:
+        from ceph_devstack.block_pool import BlockPool
+
+        pool = BlockPool.from_config(config)
+        if pool is None:
+            return True
+        if os.access(pool.parent, os.R_OK | os.W_OK):
+            return True
+        logger.error(
+            f"{self.suggest_msg} ({pool.parent}). "
+            "Join the disk group and re-login, or fix device permissions."
+        )
+        return False
 
 
 class SELinuxModule(FixableRequirement):

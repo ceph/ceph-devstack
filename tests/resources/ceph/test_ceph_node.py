@@ -291,6 +291,20 @@ class TestCephNodeBuild:
 
 
 class TestCephNodeRuntime:
+    def test_devices_allocate_from_empty_host(self, tmp_path):
+        config["data_dir"] = str(tmp_path / "ceph")
+        config["containers"]["ceph_node"]["loop_device_count"] = 3
+        assert CephNode().devices == ["/dev/loop0", "/dev/loop1", "/dev/loop2"]
+
+    def test_devices_skip_loops_already_claimed(self, tmp_path):
+        config["data_dir"] = str(tmp_path / "ceph")
+        image_dir = tmp_path / "disk_images"
+        image_dir.mkdir(parents=True)
+        (image_dir / "testnode_0-0").write_bytes(b"")
+        (image_dir / "testnode_0-1").write_bytes(b"")
+        config["containers"]["ceph_node"]["loop_device_count"] = 2
+        assert CephNode().devices == ["/dev/loop2", "/dev/loop3"]
+
     def test_cluster_dir_defaults_to_stack_data_dir(self, tmp_path):
         config["data_dir"] = str(tmp_path)
         assert CephNode().cluster_dir == tmp_path

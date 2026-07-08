@@ -462,5 +462,5 @@ prepare_osds
 wait_for_osds
 wait_for_health
 
-echo "Ceph cluster is running; use: podman exec ${HOSTNAME:-ceph_node} ceph -s"
+echo "Ceph cluster is running; use: podman exec ${CONTAINER_NAME:-ceph_node} ceph -s"
 exec tail -f /dev/null

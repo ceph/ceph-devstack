@@ -105,6 +105,9 @@ class TestConfigDefaults:
         assert config == {
             "stack": "teuthology",
             "data_dir": "~/.local/share/ceph-devstack",
+            "block_pool": {
+                "state_dir": "~/.local/share/ceph-devstack",
+            },
             "stacks": {
                 "teuthology": {
                     "services": [
@@ -134,6 +137,7 @@ class TestConfigDefaults:
                 "pulpito": {"image": "quay.io/ceph-infra/pulpito:main"},
                 "testnode": {
                     "count": 3,
+                    "loop_device_count": 1,
                     "loop_device_size": "5G",
                     "image": "quay.io/ceph-infra/teuthology-testnode:main",
                 },
@@ -142,6 +146,8 @@ class TestConfigDefaults:
                     "image": "quay.io/ceph-ci/ceph:main",
                     "loop_device_count": 3,
                     "loop_device_size": "5G",
+                    "dashboard_port": 8080,
+                    "dashboard_ssl": False,
                 },
             },
         }

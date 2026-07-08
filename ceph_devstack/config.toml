@@ -1,6 +1,20 @@
 stack = "teuthology"
 data_dir = "~/.local/share/ceph-devstack"
 
+[block_pool]
+state_dir = "~/.local/share/ceph-devstack"
+# Dedicated empty block device or partition. Whole disks are allowed when
+# empty; disks with existing partitions must use a partition path instead.
+# Enrollment reads/writes the parent directly: your user must be able to
+# open the device for read/write (typically membership in the disk group).
+# First run requires allow_enroll = true; the tool writes a tail marker and
+# refuses non-empty or foreign devices. If block_pool.json is lost but the
+# marker remains, delete the state file and start again; the pool reclaims
+# the marker automatically.
+# parent = "/dev/nvme0n1"
+# parent = "/dev/nvme0n1p1"
+# allow_enroll = true
+
 [stacks.teuthology]
 services = [
     "postgres",
@@ -26,6 +40,7 @@ dashboard_port = 8080
 dashboard_ssl = false
 # dashboard_user = "admin"
 # dashboard_password = "admin"
+# dashboard_show_password = false    # log dashboard password on container start
 # dashboard = false                  # disable mgr dashboard
 # image_builder = "cpatch"         # default; patch local binaries into runtime image
 # image_builder = "container"      # future: container/build.sh + local packages
@@ -66,6 +81,7 @@ image = "quay.io/ceph-infra/pulpito:main"
 
 [containers.testnode]
 count = 3
+loop_device_count = 1
 loop_device_size = "5G"
 image = "quay.io/ceph-infra/teuthology-testnode:main"
 

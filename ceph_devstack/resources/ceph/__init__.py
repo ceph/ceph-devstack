@@ -23,6 +23,8 @@ from ceph_devstack.resources.ceph.requirements import (
     HasSudo,
     LoopControlDeviceExists,
     LoopControlDeviceWriteable,
+    BlockPoolDiskGroup,
+    BlockPoolParentAccessible,
     SELinuxModule,
 )
 from ceph_devstack.resources.ceph.utils import get_runs, get_jobs
@@ -157,6 +159,8 @@ class CephDevStack:
         if "testnode" in self.service_specs or "ceph_node" in self.service_specs:
             result = result and await LoopControlDeviceExists().evaluate()
             result = result and await LoopControlDeviceWriteable().evaluate()
+            result = result and await BlockPoolDiskGroup().evaluate()
+            result = result and await BlockPoolParentAccessible().evaluate()
 
         # Check for SELinux being enabled and Enforcing; then check for the
         # presence of our module. If necessary, inform the user and instruct

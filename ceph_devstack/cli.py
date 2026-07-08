@@ -68,6 +68,13 @@ def main() -> int:
     if args.command == "config":
         CONFIG_HANDLERS[args.config_op](config, args)
         return 0
+    if args.command == "block-pool":
+        from ceph_devstack.block_pool import BlockPool
+
+        if args.block_pool_op != "status":
+            logger.error("Usage: ceph-devstack block-pool status")
+            return 2
+        return BlockPool.status_from_config(config)
     config["args"] = vars(args)
     Path(config["data_dir"]).expanduser().mkdir(parents=True, exist_ok=True)
     stack = CephDevStack(stack_name=config.active_stack)

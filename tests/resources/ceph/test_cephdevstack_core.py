@@ -415,7 +415,11 @@ class TestCephDevStackInit:
             "paddles": {"image": "paddles:latest", "count": 1},
             "beanstalk": {"image": "beanstalk:latest", "count": 1},
             "pulpito": {"image": "pulpito:latest", "count": 1},
-            "testnode": {"image": "testnode:latest", "count": 3},
+            "testnode": {
+                "image": "testnode:latest",
+                "count": 3,
+                "loop_device_count": 1,
+            },
             "teuthology": {"image": "teuthology:latest", "count": 1},
             "archive": {"image": "archive:latest", "count": 1},
         }

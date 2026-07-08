@@ -297,4 +297,12 @@ async def check_requirements():
     result = result and await SysctlValue("fs.aio-max-nr", 2097152).evaluate()
     result = result and await SysctlValue("kernel.pid_max", 4194304).evaluate()
 
+    from ceph_devstack.resources.ceph.requirements import (
+        BlockPoolDiskGroup,
+        BlockPoolParentAccessible,
+    )
+
+    result = result and await BlockPoolDiskGroup().evaluate()
+    result = result and await BlockPoolParentAccessible().evaluate()
+
     return result
