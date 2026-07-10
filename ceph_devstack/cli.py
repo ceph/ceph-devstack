@@ -48,9 +48,11 @@ def main() -> int:
     obj = CephDevStack()
 
     async def run():
-        if not await asyncio.gather(
-            check_requirements(),
-            obj.check_requirements(),
+        if not all(
+            await asyncio.gather(
+                check_requirements(),
+                obj.check_requirements(),
+            )
         ):
             logger.error("Requirements not met!")
             return 1

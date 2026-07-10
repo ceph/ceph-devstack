@@ -1,4 +1,3 @@
-import asyncio
 import json
 import logging
 import os
@@ -10,7 +9,7 @@ import yaml
 from packaging.version import parse as parse_version, Version
 from typing import Dict, List, Optional, Union
 
-from .exec import Command
+from .exec import Command, Subprocess
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +45,7 @@ class Host:
         cwd: Optional[pathlib.Path] = None,
         env: Optional[Dict] = None,
         stream_output: bool = False,
-    ) -> asyncio.subprocess.Process:
+    ) -> Subprocess:
         return await self.cmd(
             args, cwd=cwd, env=env, stream_output=stream_output
         ).arun()
@@ -145,7 +144,15 @@ class LocalHost(Host):
 
 class RemoteHost(Host):
     type = "remote"
-    base_args = ["podman", "machine", "ssh", "--"]
+    base_args = ["podman", "machine", "ssh"]
+
+    def _remote_args(self, args: List[str], stream_output: bool) -> List[str]:
+        remote = list(self.base_args)
+        if stream_output:
+            remote.append("-t")
+        remote.append("--")
+        remote.extend(args)
+        return remote
 
     def cmd(
         self,
@@ -155,7 +162,7 @@ class RemoteHost(Host):
         stream_output: bool = False,
     ):
         if args[0] != "podman":
-            args = self.base_args + args
+            args = self._remote_args(args, stream_output)
         return super().cmd(args, cwd=cwd, env=env, stream_output=stream_output)
 
     def path_exists(self, path: Union[str, pathlib.Path]):

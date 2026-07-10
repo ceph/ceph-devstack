@@ -205,22 +205,17 @@ class CephDevStack:
                 containers.append(object)
         logger.info(f"Watching {containers}")
         while True:
-            try:
-                for container in containers:
-                    with contextlib.suppress(CalledProcessError):
-                        if not await container.exists():
-                            logger.info(
-                                f"Container {container.name} was removed; replacing"
-                            )
-                            await container.create()
-                            await container.start()
-                        elif not await container.is_running():
-                            logger.info(
-                                f"Container {container.name} stopped; restarting"
-                            )
-                            await container.start()
-            except KeyboardInterrupt:
-                break
+            for container in containers:
+                with contextlib.suppress(CalledProcessError):
+                    if not await container.exists():
+                        logger.info(
+                            f"Container {container.name} was removed; replacing"
+                        )
+                        await container.create()
+                        await container.start()
+                    elif not await container.is_running():
+                        logger.info(f"Container {container.name} stopped; restarting")
+                        await container.start()
 
     async def wait(self, container_name: str):
         for spec in self.service_specs.values():
