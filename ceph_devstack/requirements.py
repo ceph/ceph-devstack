@@ -38,7 +38,8 @@ class FixableRequirement(Requirement):
 
     async def fix(self) -> bool:
         assert self.fix_cmd, "Attempted to fix without a fix command"
-        proc = await self.host.arun(self.fix_cmd, stream_output=True)
+        stream_output = config["args"].get("verbose", False)
+        proc = await self.host.arun(self.fix_cmd, stream_output=stream_output)
         return await proc.wait() == 0
 
 
