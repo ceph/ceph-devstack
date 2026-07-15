@@ -123,7 +123,7 @@ class Archive(Container):
 
     @property
     def archive_dir(self):
-        return Path(config["data_dir"]) / "archive"
+        return (Path(config["data_dir"]) / "archive").expanduser()
 
 
 class Pulpito(Container):
@@ -412,7 +412,7 @@ class Teuthology(Container):
 
     @property
     def archive_dir(self) -> Path:
-        return Path(config["data_dir"]) / "archive"
+        return (Path(config["data_dir"]) / "archive").expanduser()
 
     async def create(self):
         self.archive_dir.expanduser().resolve().mkdir(parents=True, exist_ok=True)
