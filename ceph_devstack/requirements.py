@@ -94,7 +94,7 @@ class PodmanMachineRunning(LocalFixableRequirement):
 class PodmanGraphDriver(Requirement):
     async def check(self):
         podman_info = await self.host.podman_info()
-        storage_conf_path = podman_info["store"]["configFile"]
+        storage_conf_path = podman_info["store"].get("configFile", "storage.conf")
         graph_driver = podman_info["store"]["graphDriverName"]
         if graph_driver == "overlay":
             return True
