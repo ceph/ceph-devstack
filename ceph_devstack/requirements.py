@@ -38,7 +38,8 @@ class FixableRequirement(Requirement):
 
     async def fix(self) -> bool:
         assert self.fix_cmd, "Attempted to fix without a fix command"
-        proc = await self.host.arun(self.fix_cmd, stream_output=True)
+        stream_output = config["args"].get("verbose", False)
+        proc = await self.host.arun(self.fix_cmd, stream_output=stream_output)
         return await proc.wait() == 0
 
 
@@ -94,7 +95,7 @@ class PodmanMachineRunning(LocalFixableRequirement):
 class PodmanGraphDriver(Requirement):
     async def check(self):
         podman_info = await self.host.podman_info()
-        storage_conf_path = podman_info["store"]["configFile"]
+        storage_conf_path = podman_info["store"].get("configFile", "storage.conf")
         graph_driver = podman_info["store"]["graphDriverName"]
         if graph_driver == "overlay":
             return True

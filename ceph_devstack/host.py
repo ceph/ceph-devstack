@@ -51,9 +51,9 @@ class Host:
         ).arun()
 
     def path_exists(self, path: Union[str, pathlib.Path]):
-        if isinstance(path, pathlib.Path):
-            return path.exists()
-        return os.path.exists(path)
+        if isinstance(path, str):
+            path = pathlib.Path(path)
+        return path.expanduser().exists()
 
     def hostname(self) -> str:
         name = socket.getfqdn()
@@ -148,8 +148,6 @@ class RemoteHost(Host):
 
     def _remote_args(self, args: List[str], stream_output: bool) -> List[str]:
         remote = list(self.base_args)
-        if stream_output:
-            remote.append("-t")
         remote.append("--")
         remote.extend(args)
         return remote

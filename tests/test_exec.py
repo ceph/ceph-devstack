@@ -11,7 +11,7 @@ from ceph_devstack.host import RemoteHost
 def test_remote_host_uses_tty_for_streaming():
     host = RemoteHost()
     cmd = host.cmd(["python", "build.py"], stream_output=True)
-    assert cmd.args == ["podman", "machine", "ssh", "-t", "--", "python", "build.py"]
+    assert cmd.args == ["podman", "machine", "ssh", "--", "python", "build.py"]
 
 
 def test_remote_host_no_tty_for_buffered_remote_cmd():
