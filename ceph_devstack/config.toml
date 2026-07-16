@@ -49,14 +49,14 @@ dashboard_ssl = false
 # build_dir = "build"              # relative to repo; passed to build-with-container.py -b
 # build_distro = "centos9"         # build-with-container.py -d
 # build_steps = ["build"]          # default for cpatch; ["packages"] for container builder
-# sccache = true                   # default; local disk cache (see sccache.conf)
-# sccache = false                  # disable sccache
-# sccache_mode = "local"           # local (default) or s3 for shared remote cache
-# sccache_cache_path = "~/.local/share/ceph-devstack/cache/sccache"
-# sccache_cache_size = "100G"      # local cache size limit
-# sccache_debug = false              # enable SCCACHE_LOG=debug on build stdout
+sccache = true                     # local disk cache (see sccache.conf); set to false to disable
+sccache_mode = "local"             # local (default) or s3 for shared remote cache
+sccache_rw_mode = false            # enable read-write mode (requires AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in environment for S3)
+# sccache_cache_path = "~/.local/share/ceph-devstack/cache/sccache"  # override default cache location
+sccache_cache_size = "100G"        # local cache size limit
+sccache_debug = false              # enable SCCACHE_LOG=debug on build stdout
 # sccache_conf = "/path/to/sccache.conf"  # override bundled config entirely
-# npm_cache = true                   # default; persist dashboard npm downloads
+npm_cache = true                   # persist dashboard npm downloads
 # npm_cache_path = "~/.local/share/ceph-devstack/cache/npm"  # override npm cache location
 # dnf_cache = false                  # persist dnf downloads when rebuilding ceph-build images
 # dnf_cache_path = "~/.local/share/ceph-devstack/cache/dnf"  # override dnf cache base dir

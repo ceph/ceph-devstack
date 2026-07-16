@@ -10,6 +10,8 @@ from pathlib import Path
 from subprocess import CalledProcessError
 from typing import List
 
+import tomlkit
+
 from ceph_devstack import PROJECT_ROOT, config, logger
 from ceph_devstack.host import host
 from ceph_devstack.resources.ceph.block_devices import BlockDeviceProvisioner
@@ -269,6 +271,11 @@ class CephNode(Container):
         return str(self.config.get("sccache_mode", "local")).lower()
 
     @property
+    def sccache_rw_mode(self) -> bool:
+        """Whether to use sccache in read-write mode (requires credentials)."""
+        return self.config.get("sccache_rw_mode", False) is True
+
+    @property
     def sccache_debug(self) -> bool:
         return self.config.get("sccache_debug", False) is True
 
@@ -385,6 +392,22 @@ class CephNode(Container):
     def _device_image(self, device: str) -> str:
         return f"{self.name}-{device.removeprefix('/dev/loop')}"
 
+    def _get_s3_credentials_env(self) -> list[str]:
+        """Get S3 credential environment variables for read-write mode."""
+        aws_access_key = os.environ.get("AWS_ACCESS_KEY_ID", "")
+        aws_secret_key = os.environ.get("AWS_SECRET_ACCESS_KEY", "")
+        if not aws_access_key or not aws_secret_key:
+            raise ValueError(
+                "sccache_rw_mode=true requires AWS_ACCESS_KEY_ID and "
+                "AWS_SECRET_ACCESS_KEY to be set in the environment"
+            )
+        return [
+            f"AWS_ACCESS_KEY_ID={aws_access_key}",
+            f"AWS_SECRET_ACCESS_KEY={aws_secret_key}",
+            "SCCACHE_S3_NO_CREDENTIALS=false",
+            "SCCACHE_S3_RW_MODE=READ_WRITE",
+        ]
+
     def _sccache_build_env(self, repo: Path) -> tuple[list[str], list[str]]:
         if not self.sccache_enabled:
             return [], []
@@ -401,7 +424,15 @@ class CephNode(Container):
             use_local_cache = True
         if not conf_src.is_file():
             raise FileNotFoundError(f"sccache config not found: {conf_src}")
-        shutil.copy2(conf_src, repo / "sccache.conf")
+
+        # Parse and modify config for S3 mode to set no_credentials correctly
+        conf_content = conf_src.read_text()
+        if self.sccache_mode == "s3":
+            conf_data = tomlkit.parse(conf_content)
+            # Set no_credentials based on whether we're using read-write mode
+            conf_data["cache"]["s3"]["no_credentials"] = not self.sccache_rw_mode
+            conf_content = tomlkit.dumps(conf_data)
+        (repo / "sccache.conf").write_text(conf_content)
 
         lines = [
             "SCCACHE=true",
@@ -421,12 +452,16 @@ class CephNode(Container):
             cache_size = self.config.get("sccache_cache_size", "100G")
             lines.append(f"SCCACHE_CACHE_SIZE={cache_size}")
         elif self.sccache_mode == "s3":
-            lines.extend(
-                [
-                    "SCCACHE_S3_NO_CREDENTIALS=true",
-                    "SCCACHE_S3_RW_MODE=READ_ONLY",
-                ]
-            )
+            if self.sccache_rw_mode:
+                lines.extend(self._get_s3_credentials_env())
+            else:
+                # Read-only mode (default)
+                lines.extend(
+                    [
+                        "SCCACHE_S3_NO_CREDENTIALS=true",
+                        "SCCACHE_S3_RW_MODE=READ_ONLY",
+                    ]
+                )
         return lines, extra_args
 
     def _prepare_build_env(self) -> tuple[Path | None, list[str]]:

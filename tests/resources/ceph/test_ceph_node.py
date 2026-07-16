@@ -1,6 +1,8 @@
 from unittest.mock import AsyncMock, patch
 import sys
 
+import pytest
+import tomlkit
 
 from ceph_devstack import config
 from ceph_devstack.resources.container import Container
@@ -137,18 +139,54 @@ class TestCephNodeBuild:
         config["containers"]["ceph_node"]["repo"] = str(repo)
         config["containers"]["ceph_node"]["sccache_mode"] = "s3"
         env_file, extra_args = CephNode()._prepare_build_env()
-        assert (
-            repo / "sccache.conf"
-        ).read_text() == PACKAGE_SCCACHE_S3_CONF.read_text()
+        sccache_conf = repo / "sccache.conf"
+        assert sccache_conf.exists()
+        conf_data = tomlkit.parse(sccache_conf.read_text())
+        assert conf_data["cache"]["s3"]["no_credentials"] is True
         contents = env_file.read_text()
         assert "SCCACHE_S3_NO_CREDENTIALS=true" in contents
         assert "SCCACHE_S3_RW_MODE=READ_ONLY" in contents
         assert "SCCACHE_DIR=" not in contents
         assert extra_args == []
 
+    def test_prepare_build_env_uses_s3_rw_mode_with_credentials(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.setenv("AWS_ACCESS_KEY_ID", "test-key-id")
+        monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "test-secret-key")
+        repo = tmp_path / "ceph"
+        repo.mkdir()
+        config["containers"]["ceph_node"]["image"] = "example:test"
+        config["containers"]["ceph_node"]["repo"] = str(repo)
+        config["containers"]["ceph_node"]["sccache_mode"] = "s3"
+        config["containers"]["ceph_node"]["sccache_rw_mode"] = True
+        env_file, extra_args = CephNode()._prepare_build_env()
+        contents = env_file.read_text()
+        assert "AWS_ACCESS_KEY_ID=test-key-id" in contents
+        assert "AWS_SECRET_ACCESS_KEY=test-secret-key" in contents
+        assert "SCCACHE_S3_RW_MODE=READ_WRITE" in contents
+        assert "SCCACHE_S3_NO_CREDENTIALS=true" not in contents
+        assert extra_args == []
+
+    def test_prepare_build_env_raises_error_for_s3_rw_without_credentials(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.delenv("AWS_ACCESS_KEY_ID", raising=False)
+        monkeypatch.delenv("AWS_SECRET_ACCESS_KEY", raising=False)
+        repo = tmp_path / "ceph"
+        repo.mkdir()
+        config["containers"]["ceph_node"]["image"] = "example:test"
+        config["containers"]["ceph_node"]["repo"] = str(repo)
+        config["containers"]["ceph_node"]["sccache_mode"] = "s3"
+        config["containers"]["ceph_node"]["sccache_rw_mode"] = True
+        with pytest.raises(
+            ValueError, match="AWS_ACCESS_KEY_ID.*AWS_SECRET_ACCESS_KEY"
+        ):
+            CephNode()._prepare_build_env()
+
     def test_prepare_build_env_honors_custom_sccache_conf(self, tmp_path):
         custom_conf = tmp_path / "custom-sccache.conf"
-        custom_conf.write_text("[cache.s3]\nbucket = test\n")
+        custom_conf.write_text('[cache.s3]\nbucket = "test"\n')
         repo = tmp_path / "ceph"
         repo.mkdir()
         config["containers"]["ceph_node"]["image"] = "example:test"
@@ -156,7 +194,10 @@ class TestCephNodeBuild:
         config["containers"]["ceph_node"]["sccache_conf"] = str(custom_conf)
         config["containers"]["ceph_node"]["sccache_mode"] = "s3"
         env_file, extra_args = CephNode()._prepare_build_env()
-        assert (repo / "sccache.conf").read_text() == custom_conf.read_text()
+        sccache_conf = repo / "sccache.conf"
+        conf_data = tomlkit.parse(sccache_conf.read_text())
+        assert conf_data["cache"]["s3"]["bucket"] == "test"
+        assert conf_data["cache"]["s3"]["no_credentials"] is True
         contents = env_file.read_text()
         assert "SCCACHE_S3_NO_CREDENTIALS=true" in contents
         assert extra_args == []
@@ -260,11 +301,12 @@ class TestCephNodeBuild:
         assert 'dir = "/sccache"' in contents
         assert "rw_mode" not in contents
 
-    def test_bundled_sccache_s3_conf_keeps_anonymous_read_settings(self):
+    def test_bundled_sccache_s3_conf_has_s3_settings(self):
         contents = PACKAGE_SCCACHE_S3_CONF.read_text()
         assert "[cache.s3]" in contents
-        assert "no_credentials = true" in contents
-        assert "rw_mode" not in contents
+        assert "bucket" in contents
+        assert "endpoint" in contents
+        # no_credentials is added dynamically by _sccache_build_env
 
     def test_cpatch_cmd_uses_upstream_script(self):
         config["containers"]["ceph_node"]["image"] = "localhost/ceph-devstack:main"
