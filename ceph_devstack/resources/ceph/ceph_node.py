@@ -259,8 +259,8 @@ class CephNode(Container):
 
     @property
     def compile_steps(self) -> List[str]:
-        """Return compile steps based on image_builder mode (not configurable)."""
-        return DEFAULT_COMPILE_STEPS.get(self.image_builder, ["build"])
+        default = DEFAULT_COMPILE_STEPS.get(self.image_builder, ["build"])
+        return list(self.config.get("build_steps", default))
 
     @property
     def sccache_enabled(self) -> bool:
@@ -547,6 +547,7 @@ class CephNode(Container):
             )
             raise
 
+
     def _make_dist_version(self) -> str:
         """Generate version string for make-dist from git describe."""
         version = self._git_value("describe --abbrev=8 --match v*")
@@ -604,6 +605,7 @@ class CephNode(Container):
             )
         logger.info(f"{self.name}: make-dist completed successfully")
 
+
     async def _run_cmd(self, cmd: List[str], cwd: str):
         proc = await host.arun(
             cmd,
@@ -646,9 +648,7 @@ class CephNode(Container):
     async def _build_image_binary_patch(self):
         self._verify_build_tree()
         build_path = self.build_path
-        logger.info(
-            f"{self.name}: building {self.image} via binary-patch in {build_path}"
-        )
+        logger.info(f"{self.name}: building {self.image} via binary-patch in {build_path}")
         await self._run_cmd(self._binary_patch_cmd(), cwd=str(build_path))
 
     async def _build_image_package_build(self):
