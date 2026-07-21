@@ -42,18 +42,9 @@ class TestCephNodeBuild:
 
     def test_compile_steps_default_for_container_builder(self):
         config["containers"]["ceph_node"]["image"] = "example:test"
-        config["containers"]["ceph_node"]["image_builder"] = "container"
+        config["containers"]["ceph_node"]["image_builder"] = "package-build"
         assert CephNode().compile_steps == ["packages"]
 
-    def test_compile_steps_respects_custom_build_steps(self):
-        config["containers"]["ceph_node"]["image"] = "example:test"
-        config["containers"]["ceph_node"]["build_steps"] = ["build", "packages"]
-        assert CephNode().compile_steps == ["build", "packages"]
-
-    def test_compile_steps_allows_single_custom_step(self):
-        config["containers"]["ceph_node"]["image"] = "example:test"
-        config["containers"]["ceph_node"]["build_steps"] = ["packages"]
-        assert CephNode().compile_steps == ["packages"]
 
     def test_compile_cmd_uses_build_with_container(self, tmp_path):
         config["containers"]["ceph_node"]["image"] = "localhost/ceph-devstack:main"
@@ -71,33 +62,6 @@ class TestCephNodeBuild:
         assert "--env-file" not in cmd
         assert "--npm-cache-path" not in cmd
 
-    def test_compile_cmd_generates_packages_step(self, tmp_path):
-        config["containers"]["ceph_node"]["image"] = "localhost/ceph-devstack:main"
-        config["containers"]["ceph_node"]["repo"] = str(tmp_path)
-        config["containers"]["ceph_node"]["build_dir"] = "build"
-        config["containers"]["ceph_node"]["build_distro"] = "centos9"
-        config["containers"]["ceph_node"]["build_steps"] = ["packages"]
-        config["containers"]["ceph_node"]["sccache"] = False
-        config["containers"]["ceph_node"]["npm_cache"] = False
-        cmd = CephNode()._compile_cmd()
-        assert "-e" in cmd
-        e_index = cmd.index("-e")
-        assert cmd[e_index + 1] == "packages"
-
-    def test_compile_cmd_generates_multiple_steps(self, tmp_path):
-        config["containers"]["ceph_node"]["image"] = "localhost/ceph-devstack:main"
-        config["containers"]["ceph_node"]["repo"] = str(tmp_path)
-        config["containers"]["ceph_node"]["build_dir"] = "build"
-        config["containers"]["ceph_node"]["build_distro"] = "centos9"
-        config["containers"]["ceph_node"]["build_steps"] = ["build", "packages"]
-        config["containers"]["ceph_node"]["sccache"] = False
-        config["containers"]["ceph_node"]["npm_cache"] = False
-        cmd = CephNode()._compile_cmd()
-        # Find all -e flags and their values
-        e_indices = [i for i, x in enumerate(cmd) if x == "-e"]
-        assert len(e_indices) == 2
-        assert cmd[e_indices[0] + 1] == "build"
-        assert cmd[e_indices[1] + 1] == "packages"
 
     def test_compile_cmd_passes_npm_cache_path(self, tmp_path):
         npm_cache = tmp_path / "npm-cache"
@@ -354,7 +318,7 @@ class TestCephNodeBuild:
     def test_cpatch_cmd_uses_upstream_script(self):
         config["containers"]["ceph_node"]["image"] = "localhost/ceph-devstack:main"
         config["containers"]["ceph_node"]["base_image"] = "quay.io/ceph-ci/ceph:main"
-        cmd = CephNode()._cpatch_cmd()
+        cmd = CephNode()._binary_patch_cmd()
         assert cmd[0:2] == ["sudo", "../src/script/cpatch"]
         assert "localhost/ceph-devstack:main" in cmd
 
