@@ -509,6 +509,8 @@ class CephNode(Container):
         ]
         for step in self.compile_steps:
             cmd.extend(["-e", step])
+        if self.image_builder == "package-build":
+            cmd.extend(["--image-variant", "packages"])
         if env_file is not None:
             cmd.extend(["--env-file", str(env_file)])
         cmd.extend(self._build_cache_args())
