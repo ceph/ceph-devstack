@@ -576,6 +576,16 @@ class CephNode(Container):
             return
         
         version = self._make_dist_version()
+        
+        # Check if tarball already exists (make-dist creates ceph-<version>.tar.bz2)
+        tarball_name = f"ceph-{version}.tar.bz2"
+        tarball_path = repo_path / tarball_name
+        if tarball_path.exists():
+            logger.info(
+                f"{self.name}: Source tarball {tarball_name} already exists, skipping make-dist"
+            )
+            return
+        
         logger.info(f"{self.name}: creating source distribution for version {version}")
         make_dist_script = repo_path / "make-dist"
         if not make_dist_script.exists():
