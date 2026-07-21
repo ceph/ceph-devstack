@@ -645,7 +645,7 @@ class CephNode(Container):
         env_file, extra_args = self._prepare_build_env()
         await self._run_cmd(
             self._compile_cmd(env_file=env_file, extra_args=extra_args),
-            cwd=self.repo,
+            cwd=str(self.repo),
         )
 
     def _verify_build_tree(self):
