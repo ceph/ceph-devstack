@@ -534,6 +534,31 @@ class CephNode(Container):
             text=True,
         ).strip()
 
+    def _make_dist_version(self) -> str:
+        """Generate version string for make-dist from git describe."""
+        version = self._git_value("describe --abbrev=8 --match 'v*'")
+        # Remove leading 'v' from version tag
+        if version.startswith("v"):
+            version = version[1:]
+        return version
+
+    async def _make_dist(self):
+        """Create source distribution tarball using make-dist."""
+        if not self.repo:
+            return
+        version = self._make_dist_version()
+        logger.info(f"{self.name}: creating source distribution for version {version}")
+        make_dist_script = Path(self.repo) / "make-dist"
+        if not make_dist_script.exists():
+            logger.warning(
+                f"{self.name}: make-dist script not found at {make_dist_script}, skipping"
+            )
+            return
+        await self._run_cmd(
+            ["./make-dist", version],
+            cwd=self.repo,
+        )
+
     async def _run_cmd(self, cmd: List[str], cwd: str):
         proc = await host.arun(
             cmd,
@@ -551,6 +576,10 @@ class CephNode(Container):
             )
 
     async def _compile(self):
+        # Run make-dist first if enabled
+        if self.config.get("make_dist", False):
+            await self._make_dist()
+
         logger.info(
             f"{self.name}: compiling ceph via build-with-container.py in {self.repo}"
         )

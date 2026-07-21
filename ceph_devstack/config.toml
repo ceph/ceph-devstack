@@ -49,6 +49,7 @@ dashboard_ssl = false
 # build_dir = "build"              # relative to repo; passed to build-with-container.py -b
 # build_distro = "centos9"         # build-with-container.py -d
 # build_steps = ["build"]          # default for cpatch; ["packages"] for container builder
+# make_dist = false                # run make-dist before building to create source distribution tarball
 sccache = true                     # local disk cache (see sccache.conf); set to false to disable
 sccache_mode = "local"             # local (default) or s3 for shared remote cache
 sccache_rw_mode = false            # enable read-write mode (requires AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in environment for S3)
