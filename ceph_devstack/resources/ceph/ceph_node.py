@@ -511,6 +511,9 @@ class CephNode(Container):
             cmd.extend(["-e", step])
         if self.image_builder == "package-build":
             cmd.extend(["--image-variant", "packages"])
+            # Pass version to build-with-container.py so make-srpm.sh can find existing tarball
+            version = self._make_dist_version()
+            cmd.extend(["--ceph-version", version])
         if env_file is not None:
             cmd.extend(["--env-file", str(env_file)])
         cmd.extend(self._build_cache_args())
