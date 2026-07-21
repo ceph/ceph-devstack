@@ -560,9 +560,21 @@ class CephNode(Container):
         """Create source distribution tarball using make-dist."""
         if not self.repo:
             return
+        
+        # Check if this is a git worktree
+        repo_path = Path(self.repo).expanduser()
+        git_path = repo_path / ".git"
+        if git_path.is_file():
+            logger.warning(
+                f"{self.name}: Detected git worktree at {repo_path}. "
+                "make-dist does not support worktrees (requires .git directory, not file). "
+                "Skipping make-dist."
+            )
+            return
+        
         version = self._make_dist_version()
         logger.info(f"{self.name}: creating source distribution for version {version}")
-        make_dist_script = Path(self.repo) / "make-dist"
+        make_dist_script = repo_path / "make-dist"
         if not make_dist_script.exists():
             logger.warning(
                 f"{self.name}: make-dist script not found at {make_dist_script}, skipping"
