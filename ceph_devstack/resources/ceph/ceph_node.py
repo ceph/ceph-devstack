@@ -530,15 +530,26 @@ class CephNode(Container):
         ]
 
     def _git_value(self, args: str) -> str:
-        return subprocess.check_output(
-            f"git {args}".split(),
-            cwd=str(Path(self.repo).expanduser()),
-            text=True,
-        ).strip()
+        repo_path = str(self.repo)
+        logger.debug(f"{self.name}: Running git {args} in {repo_path}")
+        try:
+            result = subprocess.check_output(
+                f"git {args}".split(),
+                cwd=repo_path,
+                text=True,
+                stderr=subprocess.PIPE,
+            ).strip()
+            logger.debug(f"{self.name}: git {args} returned: {result}")
+            return result
+        except CalledProcessError as e:
+            logger.error(
+                f"{self.name}: git {args} failed in {repo_path}: {e.stderr}"
+            )
+            raise
 
     def _make_dist_version(self) -> str:
         """Generate version string for make-dist from git describe."""
-        version = self._git_value("describe --abbrev=8 --match 'v*'")
+        version = self._git_value("describe --abbrev=8 --match v*")
         # Remove leading 'v' from version tag
         if version.startswith("v"):
             version = version[1:]
@@ -556,10 +567,42 @@ class CephNode(Container):
                 f"{self.name}: make-dist script not found at {make_dist_script}, skipping"
             )
             return
-        await self._run_cmd(
-            ["./make-dist", version],
-            cwd=self.repo,
+        # Run make-dist using asyncio subprocess with streaming output
+        logger.info(
+            f"{self.name}: Running make-dist (this may take several minutes for submodule updates)..."
         )
+        process = await asyncio.create_subprocess_exec(
+            "./make-dist",
+            version,
+            cwd=str(self.repo),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        
+        # Stream output to show progress
+        output_lines = []
+        while True:
+            line = await process.stdout.readline()
+            if not line:
+                break
+            line_str = line.decode().rstrip()
+            output_lines.append(line_str)
+            # Log key progress indicators
+            if any(keyword in line_str.lower() for keyword in ['updating', 'synchronizing', 'version', 'creating']):
+                logger.info(f"{self.name}: {line_str}")
+        
+        await process.wait()
+        
+        if process.returncode != 0:
+            logger.error(f"{self.name}: make-dist failed")
+            for line in output_lines[-20:]:  # Show last 20 lines
+                logger.error(f"  {line}")
+            raise CalledProcessError(
+                process.returncode,
+                ["./make-dist", version],
+                output="\n".join(output_lines),
+            )
+        logger.info(f"{self.name}: make-dist completed successfully")
 
     async def _run_cmd(self, cmd: List[str], cwd: str):
         proc = await host.arun(
