@@ -34,8 +34,8 @@ CLUSTER_DATA_NAMES = ("var", "fsid", CLUSTER_ENTRYPOINT_NAME)
 CONTAINER_CLUSTER_DIR = "/var/lib/ceph-devstack/cluster"
 
 DEFAULT_COMPILE_STEPS = {
-    "cpatch": ["build"],
-    "container": ["packages"],
+    "binary-patch": ["build"],
+    "package-build": ["packages"],
 }
 
 CEPH_NODE_CAPABILITIES = [
@@ -255,12 +255,12 @@ class CephNode(Container):
 
     @property
     def image_builder(self) -> str:
-        return self.config.get("image_builder", "cpatch")
+        return self.config.get("image_builder", "binary-patch")
 
     @property
     def compile_steps(self) -> List[str]:
-        default = DEFAULT_COMPILE_STEPS.get(self.image_builder, ["build"])
-        return list(self.config.get("build_steps", default))
+        """Return compile steps based on image_builder mode (not configurable)."""
+        return DEFAULT_COMPILE_STEPS.get(self.image_builder, ["build"])
 
     @property
     def sccache_enabled(self) -> bool:
@@ -516,7 +516,7 @@ class CephNode(Container):
             cmd.append(f"--extra={extra}")
         return cmd
 
-    def _cpatch_cmd(self) -> List[str]:
+    def _binary_patch_cmd(self) -> List[str]:
         return [
             "sudo",
             "../src/script/cpatch",
@@ -576,8 +576,8 @@ class CephNode(Container):
             )
 
     async def _compile(self):
-        # Run make-dist first if enabled
-        if self.config.get("make_dist", False):
+        # Run make-dist automatically for package-build mode
+        if self.image_builder == "package-build":
             await self._make_dist()
 
         logger.info(
@@ -598,22 +598,24 @@ class CephNode(Container):
             "after build-with-container.py"
         )
 
-    async def _build_image_cpatch(self):
+    async def _build_image_binary_patch(self):
         self._verify_build_tree()
         build_path = self.build_path
-        logger.info(f"{self.name}: building {self.image} via cpatch in {build_path}")
-        await self._run_cmd(self._cpatch_cmd(), cwd=str(build_path))
+        logger.info(
+            f"{self.name}: building {self.image} via binary-patch in {build_path}"
+        )
+        await self._run_cmd(self._binary_patch_cmd(), cwd=str(build_path))
 
-    async def _build_image_container(self):
+    async def _build_image_package_build(self):
         raise NotImplementedError(
-            "image_builder='container' requires ceph container/build.sh to consume "
+            "image_builder='package-build' requires ceph container/build.sh to consume "
             "locally-built packages; enable this once that support lands upstream"
         )
 
     async def _build_image(self):
         builders = {
-            "cpatch": self._build_image_cpatch,
-            "container": self._build_image_container,
+            "binary-patch": self._build_image_binary_patch,
+            "package-build": self._build_image_package_build,
         }
         try:
             builder = builders[self.image_builder]
