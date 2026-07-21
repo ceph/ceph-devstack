@@ -532,7 +532,7 @@ class CephNode(Container):
     def _git_value(self, args: str) -> str:
         return subprocess.check_output(
             f"git {args}".split(),
-            cwd=self.repo,
+            cwd=str(Path(self.repo).expanduser()),
             text=True,
         ).strip()
 
