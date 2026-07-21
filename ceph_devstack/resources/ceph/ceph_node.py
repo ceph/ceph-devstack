@@ -575,7 +575,7 @@ class CephNode(Container):
         process = await asyncio.create_subprocess_exec(
             "./make-dist",
             version,
-            cwd=str(self.repo),
+            cwd=str(Path(self.repo).expanduser()),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
         )
