@@ -155,7 +155,7 @@ class CephBuilder(Container):
             return "build"
         path = Path(os.path.expanduser(str(build_dir)))
         if path.is_absolute() and self.repo:
-            repo = Path(self.repo).resolve()
+            repo = expand_path(self.repo).resolve()
             try:
                 return str(path.resolve().relative_to(repo))
             except ValueError:
@@ -167,7 +167,7 @@ class CephBuilder(Container):
         """Full path to the build directory."""
         if not self.repo:
             return Path()
-        return Path(self.repo) / self.build_subdir
+        return expand_path(self.repo) / self.build_subdir
 
     @property
     def image_builder(self) -> str:
@@ -331,7 +331,7 @@ class CephBuilder(Container):
         """Prepare build environment file and extra container args."""
         if not self.repo:
             return None, []
-        repo = Path(self.repo)
+        repo = expand_path(self.repo)
         extra_args: list[str] = []
 
         worktree = git_worktree_info(repo)
@@ -360,7 +360,7 @@ class CephBuilder(Container):
     ) -> List[str]:
         """Build the compile command for build-with-container.py."""
         distro = self.config.get("build_distro", "centos9")
-        script = str(Path(self.repo) / "src/script/build-with-container.py")
+        script = str(expand_path(self.repo) / "src/script/build-with-container.py")
         python_cmd = "python3" if host.type == "remote" else sys.executable
         cmd = [
             python_cmd,
@@ -390,7 +390,7 @@ class CephBuilder(Container):
         """Execute a git command and return its output."""
         import subprocess
         
-        repo_path = str(self.repo)
+        repo_path = str(expand_path(self.repo))
         logger.debug(f"{self.name}: Running git {args} in {repo_path}")
         try:
             result = subprocess.check_output(
@@ -421,7 +421,7 @@ class CephBuilder(Container):
             return
         
         # Check if this is a git worktree
-        repo_path = Path(self.repo).expanduser()
+        repo_path = expand_path(self.repo)
         git_path = repo_path / ".git"
         if git_path.is_file():
             logger.warning(
@@ -457,7 +457,7 @@ class CephBuilder(Container):
         process = await asyncio.create_subprocess_exec(
             "./make-dist",
             version,
-            cwd=str(Path(self.repo).expanduser()),
+            cwd=str(expand_path(self.repo)),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
         )
@@ -491,7 +491,7 @@ class CephBuilder(Container):
         """Run a command and handle errors."""
         proc = await host.arun(
             cmd,
-            cwd=Path(cwd).expanduser(),
+            cwd=expand_path(cwd),
             stream_output=True,
         )
         returncode = await proc.wait()
