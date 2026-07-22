@@ -11,7 +11,7 @@ import tomlkit
 
 from ceph_devstack import PROJECT_ROOT, config, logger
 from ceph_devstack.host import host
-from ceph_devstack.resources import PodmanResource
+from ceph_devstack.resources.container import Container
 
 
 PACKAGE_SCCACHE_CONF = PROJECT_ROOT / "sccache.conf"
@@ -112,11 +112,11 @@ def worktree_container_mounts(
     return mounts
 
 
-class CephBuilder(PodmanResource):
+class CephBuilder(Container):
     """Manages Ceph compilation and build artifacts.
     
     This resource handles:
-    - Builder container image management
+    - Builder container image management (via Containerfile.ceph)
     - Compilation via build-with-container.py
     - Build cache management (sccache, npm, dnf)
     - Build artifact production
@@ -539,16 +539,32 @@ class CephBuilder(PodmanResource):
         except FileNotFoundError:
             return False
 
-    async def create(self):
-        """Prepare build environment and run compilation."""
+    async def build(self):
+        """Build the builder container image using build-with-container.py."""
         if not self.repo:
-            logger.warning(f"{self.name}: No repo configured, skipping build")
+            logger.info(f"{self.name}: No repo configured, skipping")
             return
         
-        logger.info(f"{self.name}: Starting Ceph compilation")
+        logger.info(f"{self.name}: Building builder container image")
+        # build-with-container.py builds the ceph-build container image
+        env_file, extra_args = self._prepare_build_env()
+        await self._run_cmd(
+            self._compile_cmd(env_file=env_file, extra_args=extra_args),
+            cwd=str(self.repo),
+        )
+        logger.info(f"{self.name}: Builder container image ready")
+
+    async def create(self):
+        """Run build-with-container.py to start builder container and compile Ceph."""
+        if not self.repo:
+            logger.warning(f"{self.name}: No repo configured, skipping")
+            return
+        
+        logger.info(f"{self.name}: Running build-with-container.py to compile Ceph")
+        # build-with-container.py orchestrates: starts builder container + compiles
         await self.compile()
         self._verify_build_tree()
-        logger.info(f"{self.name}: Build artifacts ready at {self.build_path}")
+        logger.info(f"{self.name}: Compilation complete, artifacts at {self.build_path}")
 
     async def remove(self):
         """Clean up build artifacts (preserves caches)."""

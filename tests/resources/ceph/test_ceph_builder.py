@@ -275,3 +275,22 @@ class TestCephBuilder:
     def test_bundled_sccache_s3_conf_has_s3_settings(self):
         contents = PACKAGE_SCCACHE_S3_CONF.read_text()
         assert "[cache.s3]" in contents
+
+    async def test_build_creates_builder_image(self, tmp_path):
+        """Test that build() calls build-with-container.py to build builder image."""
+        repo = tmp_path / "ceph"
+        repo.mkdir()
+        
+        config["containers"]["ceph_builder"] = {}
+        config["containers"]["ceph_builder"]["repo"] = str(repo)
+        
+        builder = CephBuilder()
+        
+        # Mock _run_cmd to avoid actually running build-with-container.py
+        with patch.object(builder, '_run_cmd', new=AsyncMock()) as mock_run:
+            await builder.build()
+            
+            # Should have called _run_cmd with build-with-container.py command
+            mock_run.assert_awaited_once()
+            call_args = mock_run.call_args[0]
+            assert "build-with-container.py" in str(call_args[0])
