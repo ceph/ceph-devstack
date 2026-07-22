@@ -2,41 +2,28 @@ import asyncio
 import os
 import shlex
 import shutil
-import subprocess
 import sys
 import uuid
 
 from pathlib import Path
 from subprocess import CalledProcessError
-from typing import List
+from typing import List, TYPE_CHECKING
 
-import tomlkit
-
-from ceph_devstack import PROJECT_ROOT, config, logger
+from ceph_devstack import config, logger
 from ceph_devstack.host import host
 from ceph_devstack.resources.ceph.block_devices import BlockDeviceProvisioner
 from ceph_devstack.resources.ceph.host_loops import allocate_loop_devices
 from ceph_devstack.resources.container import Container
 
+if TYPE_CHECKING:
+    from ceph_devstack.resources.ceph.ceph_builder import CephBuilder
+
 
 DEFAULT_CEPH_IMAGE = "quay.io/ceph-ci/ceph:main"
-DEFAULT_BASE_IMAGE = "quay.io/ceph-ci/ceph:main"
-PACKAGE_SCCACHE_CONF = PROJECT_ROOT / "sccache.conf"
-PACKAGE_SCCACHE_S3_CONF = PROJECT_ROOT / "sccache-s3.conf"
-CONTAINER_SCCACHE_DIR = "/sccache"
-CONTAINER_GIT_METADATA_DIR = "/git-metadata"
-BWC_HOMEDIR = "/ceph"
-REPO_DEVSTACK_DIR = ".ceph-devstack"
-BUILD_ENV_NAME = "build.env"
 ENTRYPOINT_SCRIPT = Path(__file__).with_name("ceph-node-entrypoint.sh")
 CLUSTER_ENTRYPOINT_NAME = "ceph-node-entrypoint.sh"
 CLUSTER_DATA_NAMES = ("var", "fsid", CLUSTER_ENTRYPOINT_NAME)
 CONTAINER_CLUSTER_DIR = "/var/lib/ceph-devstack/cluster"
-
-DEFAULT_COMPILE_STEPS = {
-    "binary-patch": ["build"],
-    "package-build": ["packages"],
-}
 
 CEPH_NODE_CAPABILITIES = [
     "SYS_ADMIN",
@@ -54,83 +41,6 @@ CEPH_NODE_CAPABILITIES = [
 
 def expand_path(path: str | Path) -> Path:
     return Path(os.path.expanduser(str(path)))
-
-
-def git_worktree_info(repo: Path) -> tuple[Path, str] | None:
-    """Return the main .git directory and worktree name for a linked worktree."""
-    git_path = repo.resolve() / ".git"
-    if not git_path.is_file():
-        return None
-    text = git_path.read_text(encoding="utf-8").strip()
-    if not text.startswith("gitdir:"):
-        return None
-    admin_dir = Path(text.split(":", 1)[1].strip())
-    if admin_dir.parent.name != "worktrees":
-        raise ValueError(f"unexpected git worktree gitdir: {admin_dir}")
-    main_git_dir = admin_dir.parent.parent
-    if not main_git_dir.is_dir():
-        raise FileNotFoundError(f"git metadata dir not found: {main_git_dir}")
-    return main_git_dir.resolve(), admin_dir.name
-
-
-def worktree_submodule_git_mounts(
-    repo: Path,
-    worktree_name: str,
-    git_overlay_dir: Path,
-) -> list[str]:
-    """Return podman mounts that rewrite submodule ``.git`` files for ``/ceph``."""
-    proc = subprocess.run(
-        ["git", "-C", str(repo), "submodule", "foreach", "--quiet", "echo $sm_path"],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if proc.returncode != 0:
-        return []
-
-    overlay_dir = git_overlay_dir / "submodules"
-    overlay_dir.mkdir(parents=True, exist_ok=True)
-    mounts: list[str] = []
-    for sm_path in proc.stdout.splitlines():
-        sm_path = sm_path.strip()
-        if not sm_path:
-            continue
-        gitdir = (
-            f"{CONTAINER_GIT_METADATA_DIR}/worktrees/{worktree_name}/modules/{sm_path}"
-        )
-        overlay = overlay_dir / f"{sm_path.replace('/', '__')}.git"
-        overlay.write_text(f"gitdir: {gitdir}\n", encoding="utf-8")
-        mounts.append(f"--volume={overlay}:{BWC_HOMEDIR}/{sm_path}/.git:Z,ro")
-    return mounts
-
-
-def worktree_container_mounts(
-    repo: Path,
-    main_git_dir: Path,
-    worktree_name: str,
-) -> list[str]:
-    """Return podman mounts that make a linked worktree usable at ``/ceph``."""
-    repo = repo.resolve()
-    main_git_dir = main_git_dir.resolve()
-    git_overlay_dir = repo / REPO_DEVSTACK_DIR / "git"
-    git_overlay_dir.mkdir(parents=True, exist_ok=True)
-
-    dot_git = git_overlay_dir / "dot-git"
-    dot_git.write_text(
-        f"gitdir: {CONTAINER_GIT_METADATA_DIR}/worktrees/{worktree_name}\n",
-        encoding="utf-8",
-    )
-
-    admin_gitdir = git_overlay_dir / "gitdir"
-    admin_gitdir.write_text(f"{BWC_HOMEDIR}/.git\n", encoding="utf-8")
-
-    mounts = [
-        f"--volume={main_git_dir}:{CONTAINER_GIT_METADATA_DIR}:Z,ro",
-        f"--volume={dot_git}:{BWC_HOMEDIR}/.git:Z,ro",
-        f"--volume={admin_gitdir}:{CONTAINER_GIT_METADATA_DIR}/worktrees/{worktree_name}/gitdir:Z,ro",
-    ]
-    mounts.extend(worktree_submodule_git_mounts(repo, worktree_name, git_overlay_dir))
-    return mounts
 
 
 class CephNode(Container):
@@ -152,6 +62,7 @@ class CephNode(Container):
         self.loop_device_count = self.config["loop_device_count"]
         self._devices: list[str] | None = None
         self._block_device_provisioner: BlockDeviceProvisioner | None = None
+        self._builder: "CephBuilder | None" = None
 
     @property
     def devices(self) -> list[str]:
@@ -164,6 +75,21 @@ class CephNode(Container):
     @property
     def config_key(self) -> str:
         return "ceph_node"
+
+    @property
+    def builder(self) -> "CephBuilder":
+        """Reference to the CephBuilder resource."""
+        if self._builder is None:
+            raise ValueError(
+                f"{self.name}: No builder configured. "
+                "CephNode requires a CephBuilder to be wired via stack integration."
+            )
+        return self._builder
+
+    @builder.setter
+    def builder(self, value: "CephBuilder"):
+        """Set the builder reference."""
+        self._builder = value
 
     @property
     def cluster_dir(self) -> Path:
@@ -230,96 +156,14 @@ class CephNode(Container):
         return self.config.get("dashboard_show_password", False) is True
 
     @property
-    def base_image(self) -> str:
-        return self.config.get("base_image", DEFAULT_BASE_IMAGE)
-
-    @property
-    def build_subdir(self) -> str:
-        build_dir = self.config.get("build_dir", "build")
-        if not build_dir:
-            return "build"
-        path = Path(os.path.expanduser(str(build_dir)))
-        if path.is_absolute() and self.repo:
-            repo = Path(self.repo).resolve()
-            try:
-                return str(path.resolve().relative_to(repo))
-            except ValueError:
-                return path.name
-        return str(build_dir).strip("/")
+    def image_builder(self) -> str:
+        """Get image builder mode from builder."""
+        return self.builder.image_builder
 
     @property
     def build_path(self) -> Path:
-        if not self.repo:
-            return Path()
-        return Path(self.repo) / self.build_subdir
-
-    @property
-    def image_builder(self) -> str:
-        return self.config.get("image_builder", "binary-patch")
-
-    @property
-    def compile_steps(self) -> List[str]:
-        default = DEFAULT_COMPILE_STEPS.get(self.image_builder, ["build"])
-        return list(self.config.get("build_steps", default))
-
-    @property
-    def sccache_enabled(self) -> bool:
-        return self.config.get("sccache", True) is not False
-
-    @property
-    def sccache_mode(self) -> str:
-        return str(self.config.get("sccache_mode", "local")).lower()
-
-    @property
-    def sccache_rw_mode(self) -> bool:
-        """Whether to use sccache in read-write mode (requires credentials)."""
-        return self.config.get("sccache_rw_mode", False) is True
-
-    @property
-    def sccache_debug(self) -> bool:
-        return self.config.get("sccache_debug", False) is True
-
-    @property
-    def sccache_cache_path(self) -> Path:
-        if custom := self.config.get("sccache_cache_path"):
-            return expand_path(custom)
-        return self.persistent_cache_dir / "sccache"
-
-    @property
-    def npm_cache_enabled(self) -> bool:
-        return self.config.get("npm_cache", True) is not False
-
-    @property
-    def npm_cache_path(self) -> Path | None:
-        if not self.npm_cache_enabled:
-            return None
-        if custom := self.config.get("npm_cache_path"):
-            return expand_path(custom)
-        return self.persistent_cache_dir / "npm"
-
-    @property
-    def dnf_cache_path(self) -> Path | None:
-        if self.config.get("dnf_cache", False) is not True:
-            return None
-        if custom := self.config.get("dnf_cache_path"):
-            return expand_path(custom)
-        return self.persistent_cache_dir / "dnf"
-
-    def _build_cache_args(self) -> list[str]:
-        """Return build-with-container.py cache flags for persistent build caches."""
-        args: list[str] = []
-
-        npm_cache = self.npm_cache_path
-        if npm_cache is not None:
-            npm_cache.mkdir(parents=True, exist_ok=True)
-            args.extend(["--npm-cache-path", str(npm_cache)])
-
-        dnf_cache = self.dnf_cache_path
-        if dnf_cache is not None:
-            dnf_cache.mkdir(parents=True, exist_ok=True)
-            args.extend(["--dnf-cache-path", str(dnf_cache)])
-
-        return args
+        """Get build path from builder."""
+        return self.builder.build_path
 
     @property
     def create_cmd(self):
@@ -394,246 +238,22 @@ class CephNode(Container):
     def _device_image(self, device: str) -> str:
         return f"{self.name}-{device.removeprefix('/dev/loop')}"
 
-    def _get_s3_credentials_env(self) -> list[str]:
-        """Get S3 credential environment variables for read-write mode."""
-        aws_access_key = os.environ.get("AWS_ACCESS_KEY_ID", "")
-        aws_secret_key = os.environ.get("AWS_SECRET_ACCESS_KEY", "")
-        if not aws_access_key or not aws_secret_key:
-            raise ValueError(
-                "sccache_rw_mode=true requires AWS_ACCESS_KEY_ID and "
-                "AWS_SECRET_ACCESS_KEY to be set in the environment"
-            )
-        return [
-            f"AWS_ACCESS_KEY_ID={aws_access_key}",
-            f"AWS_SECRET_ACCESS_KEY={aws_secret_key}",
-            "SCCACHE_S3_NO_CREDENTIALS=false",
-            "SCCACHE_S3_RW_MODE=READ_WRITE",
-        ]
 
-    def _sccache_build_env(self, repo: Path) -> tuple[list[str], list[str]]:
-        if not self.sccache_enabled:
-            return [], []
-
-        homedir = BWC_HOMEDIR
-        if custom_conf := self.config.get("sccache_conf"):
-            conf_src = expand_path(custom_conf)
-            use_local_cache = self.sccache_mode == "local"
-        elif self.sccache_mode == "s3":
-            conf_src = PACKAGE_SCCACHE_S3_CONF
-            use_local_cache = False
-        else:
-            conf_src = PACKAGE_SCCACHE_CONF
-            use_local_cache = True
-        if not conf_src.is_file():
-            raise FileNotFoundError(f"sccache config not found: {conf_src}")
-
-        # Parse and modify config for S3 mode to set no_credentials correctly
-        conf_content = conf_src.read_text()
-        if self.sccache_mode == "s3":
-            conf_data = tomlkit.parse(conf_content)
-            # Set no_credentials based on whether we're using read-write mode
-            conf_data["cache"]["s3"]["no_credentials"] = not self.sccache_rw_mode
-            conf_content = tomlkit.dumps(conf_data)
-        (repo / "sccache.conf").write_text(conf_content)
-
-        lines = [
-            "SCCACHE=true",
-            f"SCCACHE_CONF={homedir}/sccache.conf",
-            f"SCCACHE_ERROR_LOG={homedir}/.ceph-devstack/sccache_log.txt",
-            "CEPH_BUILD_NORMALIZE_PATHS=true",
-        ]
-        if self.sccache_debug:
-            lines.append("SCCACHE_LOG=debug")
-
-        extra_args: list[str] = []
-        if use_local_cache:
-            cache_path = self.sccache_cache_path
-            cache_path.mkdir(parents=True, exist_ok=True)
-            extra_args.append(f"--volume={cache_path}:{CONTAINER_SCCACHE_DIR}:Z")
-            lines.append(f"SCCACHE_DIR={CONTAINER_SCCACHE_DIR}")
-            cache_size = self.config.get("sccache_cache_size", "100G")
-            lines.append(f"SCCACHE_CACHE_SIZE={cache_size}")
-        elif self.sccache_mode == "s3":
-            if self.sccache_rw_mode:
-                lines.extend(self._get_s3_credentials_env())
-            else:
-                # Read-only mode (default)
-                lines.extend(
-                    [
-                        "SCCACHE_S3_NO_CREDENTIALS=true",
-                        "SCCACHE_S3_RW_MODE=READ_ONLY",
-                    ]
-                )
-        return lines, extra_args
-
-    def _prepare_build_env(self) -> tuple[Path | None, list[str]]:
-        if not self.repo:
-            return None, []
-        repo = Path(self.repo)
-        extra_args: list[str] = []
-
-        worktree = git_worktree_info(repo)
-        if worktree is not None:
-            main_git_dir, worktree_name = worktree
-            extra_args.extend(
-                worktree_container_mounts(repo, main_git_dir, worktree_name)
-            )
-
-        lines, sccache_extra = self._sccache_build_env(repo)
-        extra_args.extend(sccache_extra)
-
-        if not lines:
-            return None, extra_args
-
-        devstack_dir = repo / REPO_DEVSTACK_DIR
-        devstack_dir.mkdir(exist_ok=True)
-        env_path = devstack_dir / BUILD_ENV_NAME
-        env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        return env_path, extra_args
-
-    def _compile_cmd(
-        self,
-        env_file: Path | None = None,
-        extra_args: List[str] | None = None,
-    ) -> List[str]:
-        distro = self.config.get("build_distro", "centos9")
-        script = str(Path(self.repo) / "src/script/build-with-container.py")
-        python_cmd = "python3" if host.type == "remote" else sys.executable
-        cmd = [
-            python_cmd,
-            script,
-            "-d",
-            distro,
-            "-b",
-            self.build_subdir,
-            "--homedir",
-            BWC_HOMEDIR,
-        ]
-        for step in self.compile_steps:
-            cmd.extend(["-e", step])
-        if self.image_builder == "package-build":
-            cmd.extend(["--image-variant", "packages"])
-            # Pass version to build-with-container.py so make-srpm.sh can find existing tarball
-            version = self._make_dist_version()
-            cmd.extend(["--ceph-version", version])
-        if env_file is not None:
-            cmd.extend(["--env-file", str(env_file)])
-        cmd.extend(self._build_cache_args())
-        for extra in extra_args or []:
-            cmd.append(f"--extra={extra}")
-        return cmd
 
     def _binary_patch_cmd(self) -> List[str]:
+        """Build command for binary-patch image creation."""
         return [
             "sudo",
             "../src/script/cpatch",
             "--base",
-            self.base_image,
+            self.builder.base_image,
             "--target",
             self.image,
             "--core",
         ]
 
-    def _git_value(self, args: str) -> str:
-        repo_path = str(self.repo)
-        logger.debug(f"{self.name}: Running git {args} in {repo_path}")
-        try:
-            result = subprocess.check_output(
-                f"git {args}".split(),
-                cwd=repo_path,
-                text=True,
-                stderr=subprocess.PIPE,
-            ).strip()
-            logger.debug(f"{self.name}: git {args} returned: {result}")
-            return result
-        except CalledProcessError as e:
-            logger.error(
-                f"{self.name}: git {args} failed in {repo_path}: {e.stderr}"
-            )
-            raise
-
-
-    def _make_dist_version(self) -> str:
-        """Generate version string for make-dist from git describe."""
-        version = self._git_value("describe --abbrev=8 --match v*")
-        # Remove leading 'v' from version tag
-        if version.startswith("v"):
-            version = version[1:]
-        return version
-
-    async def _make_dist(self):
-        """Create source distribution tarball using make-dist."""
-        if not self.repo:
-            return
-        
-        # Check if this is a git worktree
-        repo_path = Path(self.repo).expanduser()
-        git_path = repo_path / ".git"
-        if git_path.is_file():
-            logger.warning(
-                f"{self.name}: Detected git worktree at {repo_path}. "
-                "make-dist does not support worktrees (requires .git directory, not file). "
-                "Skipping make-dist."
-            )
-            return
-        
-        version = self._make_dist_version()
-        
-        # Check if tarball already exists (make-dist creates ceph-<version>.tar.bz2)
-        tarball_name = f"ceph-{version}.tar.bz2"
-        tarball_path = repo_path / tarball_name
-        if tarball_path.exists():
-            logger.info(
-                f"{self.name}: Source tarball {tarball_name} already exists, skipping make-dist"
-            )
-            return
-        
-        logger.info(f"{self.name}: creating source distribution for version {version}")
-        make_dist_script = repo_path / "make-dist"
-        if not make_dist_script.exists():
-            logger.warning(
-                f"{self.name}: make-dist script not found at {make_dist_script}, skipping"
-            )
-            return
-        # Run make-dist using asyncio subprocess with streaming output
-        logger.info(
-            f"{self.name}: Running make-dist (this may take several minutes for submodule updates)..."
-        )
-        process = await asyncio.create_subprocess_exec(
-            "./make-dist",
-            version,
-            cwd=str(Path(self.repo).expanduser()),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-        )
-        
-        # Stream output to show progress
-        output_lines = []
-        while True:
-            line = await process.stdout.readline()
-            if not line:
-                break
-            line_str = line.decode().rstrip()
-            output_lines.append(line_str)
-            # Log key progress indicators
-            if any(keyword in line_str.lower() for keyword in ['updating', 'synchronizing', 'version', 'creating']):
-                logger.info(f"{self.name}: {line_str}")
-        
-        await process.wait()
-        
-        if process.returncode != 0:
-            logger.error(f"{self.name}: make-dist failed")
-            for line in output_lines[-20:]:  # Show last 20 lines
-                logger.error(f"  {line}")
-            raise CalledProcessError(
-                process.returncode,
-                ["./make-dist", version],
-                output="\n".join(output_lines),
-            )
-        logger.info(f"{self.name}: make-dist completed successfully")
-
-
     async def _run_cmd(self, cmd: List[str], cwd: str):
+        """Run a command and handle errors."""
         proc = await host.arun(
             cmd,
             cwd=Path(cwd).expanduser(),
@@ -649,54 +269,33 @@ class CephNode(Container):
                 stderr=stderr or None,
             )
 
-    async def _compile(self):
-        # Run make-dist automatically for package-build mode
-        if self.image_builder == "package-build":
-            await self._make_dist()
-
-        logger.info(
-            f"{self.name}: compiling ceph via build-with-container.py in {self.repo}"
-        )
-        env_file, extra_args = self._prepare_build_env()
-        await self._run_cmd(
-            self._compile_cmd(env_file=env_file, extra_args=extra_args),
-            cwd=str(self.repo),
-        )
-
-    def _verify_build_tree(self):
-        build_path = self.build_path
-        if (build_path / "build.ninja").exists() or (build_path / "Makefile").exists():
-            return
-        raise FileNotFoundError(
-            f"Ceph build dir {build_path} missing Makefile or build.ninja "
-            "after build-with-container.py"
-        )
-
     async def _build_image_binary_patch(self):
-        self._verify_build_tree()
+        """Build runtime image using binary-patch method."""
         build_path = self.build_path
         logger.info(f"{self.name}: building {self.image} via binary-patch in {build_path}")
         await self._run_cmd(self._binary_patch_cmd(), cwd=str(build_path))
 
     async def _build_image_package_build(self):
+        """Build runtime image using package-build method."""
         raise NotImplementedError(
             "image_builder='package-build' requires ceph container/build.sh to consume "
             "locally-built packages; enable this once that support lands upstream"
         )
 
     async def _build_image(self):
+        """Build the runtime image from builder artifacts."""
         builders = {
             "binary-patch": self._build_image_binary_patch,
             "package-build": self._build_image_package_build,
         }
         try:
-            builder = builders[self.image_builder]
+            builder_method = builders[self.image_builder]
         except KeyError as exc:
             known = ", ".join(sorted(builders))
             raise ValueError(
                 f"Unknown image_builder {self.image_builder!r}; known: {known}"
             ) from exc
-        await builder()
+        await builder_method()
 
     def install_entrypoint(self):
         if not ENTRYPOINT_SCRIPT.is_file():
@@ -747,9 +346,19 @@ class CephNode(Container):
             )
 
     async def build(self):
-        if not self.should_build:
+        """Build runtime image from CephBuilder artifacts."""
+        # Only build if we have a local image tag (localhost/...)
+        if not self.image.startswith("localhost/"):
             return
-        await self._compile()
+        
+        # Ensure builder has completed compilation
+        if not self.builder.build_path.exists():
+            raise RuntimeError(
+                f"{self.name}: Builder has not completed compilation. "
+                f"Build artifacts not found at {self.builder.build_path}"
+            )
+        
+        logger.info(f"{self.name}: Building runtime image from {self.builder.name} artifacts")
         await self._build_image()
 
     async def create(self):

@@ -18,6 +18,7 @@ from ceph_devstack.resources.ceph.containers import (
     Teuthology,
     Archive,
 )
+from ceph_devstack.resources.ceph.ceph_builder import CephBuilder
 from ceph_devstack.resources.ceph.ceph_node import CephNode, CONTAINER_CLUSTER_DIR
 from ceph_devstack.resources.ceph.requirements import (
     HasSudo,
@@ -96,6 +97,7 @@ SERVICES = {
     "teuthology": Teuthology,
     "testnode": TestNode,
     "archive": Archive,
+    "ceph_builder": CephBuilder,
     "ceph_node": CephNode,
 }
 
@@ -151,6 +153,14 @@ class CephDevStack:
             paddles_obj.env_vars["PADDLES_SQLALCHEMY_URL"] = (
                 postgres_obj.paddles_sqla_url
             )
+        
+        # Wire ceph_builder -> ceph_node
+        if (builder_spec := self.service_specs.get("ceph_builder")) and (
+            node_spec := self.service_specs.get("ceph_node")
+        ):
+            builder_obj = builder_spec["objects"][0]
+            for node_obj in node_spec["objects"]:
+                node_obj.builder = builder_obj
 
     async def check_requirements(self):
         result = True

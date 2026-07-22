@@ -28,26 +28,19 @@ services = [
 secrets = ["ssh_keypair"]
 
 [stacks.ceph]
-services = ["ceph_node"]
+services = ["ceph_builder", "ceph_node"]
 secrets = []
 data_dir = "~/.local/share/ceph-devstack/ceph"
 
-[containers.ceph_node]
-image = "quay.io/ceph-ci/ceph:main"
-loop_device_count = 3
-loop_device_size = "5G"
-dashboard_port = 8080
-dashboard_ssl = false
-# dashboard_user = "admin"
-# dashboard_password = "admin"
-# dashboard_show_password = false    # log dashboard password on container start
-# dashboard = false                  # disable mgr dashboard
-# image_builder = "binary-patch"   # default; patch local binaries into runtime image
-# image_builder = "package-build"  # future: container/build.sh + local packages
+[containers.ceph_builder]
+# CephBuilder handles compilation and build artifacts
 # Build from a local ceph.git checkout:
 # repo = "~/dev/ceph"
+base_image = "quay.io/ceph-ci/ceph:main"
 # build_dir = "build"              # relative to repo; passed to build-with-container.py -b
 # build_distro = "centos9"         # build-with-container.py -d
+image_builder = "binary-patch"     # "binary-patch" (default) or "package-build"
+# build_steps = ["build"]          # compilation steps for build-with-container.py
 sccache = true                     # local disk cache (see sccache.conf); set to false to disable
 sccache_mode = "local"             # local (default) or s3 for shared remote cache
 sccache_rw_mode = false            # enable read-write mode (requires AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in environment for S3)
@@ -60,7 +53,19 @@ npm_cache = true                   # persist dashboard npm downloads
 # dnf_cache = false                  # persist dnf downloads when rebuilding ceph-build images
 # dnf_cache_path = "~/.local/share/ceph-devstack/cache/dnf"  # override dnf cache base dir
 # repo may be a git worktree; ceph-devstack mounts git metadata for builds at /ceph
-# base_image = "quay.io/ceph-ci/ceph:main"
+
+[containers.ceph_node]
+# CephNode handles cluster deployment and runtime
+# References ceph_builder for build artifacts (wired automatically by stack)
+image = "quay.io/ceph-ci/ceph:main"
+loop_device_count = 3
+loop_device_size = "5G"
+dashboard_port = 8080
+dashboard_ssl = false
+# dashboard_user = "admin"
+# dashboard_password = "admin"
+# dashboard_show_password = false    # log dashboard password on container start
+# dashboard = false                  # disable mgr dashboard
 # image = "localhost/ceph-devstack:main"
 
 [containers.archive]
