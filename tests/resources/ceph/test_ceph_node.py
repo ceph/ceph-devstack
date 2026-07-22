@@ -40,11 +40,11 @@ class TestCephNodeBuild:
         config["containers"]["ceph_node"]["image"] = "quay.io/ceph-ci/ceph:main"
         assert CephNode().should_build is False
 
-    def test_binary_patch_cmd_uses_builder_base_image(self, tmp_path):
+    def test_binary_patch_cmd_uses_builder_target_image(self, tmp_path):
         from ceph_devstack.resources.ceph.ceph_builder import CephBuilder
         
         config["containers"]["ceph_builder"] = {}
-        config["containers"]["ceph_builder"]["base_image"] = "quay.io/ceph-ci/ceph:main"
+        config["containers"]["ceph_builder"]["target_image"] = "quay.io/ceph-ci/ceph:main"
         config["containers"]["ceph_builder"]["repo"] = str(tmp_path)
         config["containers"]["ceph_node"] = {}
         config["containers"]["ceph_node"]["image"] = "localhost/ceph-devstack:main"

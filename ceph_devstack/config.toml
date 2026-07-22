@@ -36,9 +36,9 @@ data_dir = "~/.local/share/ceph-devstack/ceph"
 # CephBuilder handles compilation and build artifacts
 # Build from a local ceph.git checkout:
 # repo = "~/dev/ceph"
-base_image = "quay.io/ceph-ci/ceph:main"
+target_image = "quay.io/ceph-ci/ceph:main"  # Target image to patch with compiled binaries (binary-patch mode only)
 # build_dir = "build"              # relative to repo; passed to build-with-container.py -b
-# build_distro = "centos9"         # build-with-container.py -d
+# build_distro = "centos9"         # Selects quay.io/ceph-ci/ceph-build:centos9 for compilation
 image_builder = "binary-patch"     # "binary-patch" (default) or "package-build"
 # build_steps = ["build"]          # compilation steps for build-with-container.py
 sccache = true                     # local disk cache (see sccache.conf); set to false to disable

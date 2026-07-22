@@ -246,7 +246,7 @@ class CephNode(Container):
             "sudo",
             "../src/script/cpatch",
             "--base",
-            self.builder.base_image,
+            self.builder.target_image,
             "--target",
             self.image,
             "--core",

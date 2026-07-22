@@ -143,9 +143,9 @@ class CephBuilder(PodmanResource):
         return self.config.get("repo", "")
 
     @property
-    def base_image(self) -> str:
-        """Base image for building."""
-        return self.config.get("base_image", "quay.io/ceph-ci/ceph:main")
+    def target_image(self) -> str:
+        """Target image to patch with build artifacts (for binary-patch mode)."""
+        return self.config.get("target_image", self.config.get("base_image", "quay.io/ceph-ci/ceph:main"))
 
     @property
     def build_subdir(self) -> str:
