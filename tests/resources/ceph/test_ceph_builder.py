@@ -298,3 +298,59 @@ class TestCephBuilder:
             mock_run.assert_awaited_once()
             call_args = mock_run.call_args[0]
             assert "build-with-container.py" in str(call_args[0])
+
+    @pytest.mark.asyncio
+    async def test_pull_uses_minimal_command(self, tmp_path):
+        """Test that pull() uses a minimal command with --image-sources pull."""
+        config["containers"]["ceph_builder"] = {}
+        config["containers"]["ceph_builder"]["repo"] = str(tmp_path)
+        config["containers"]["ceph_builder"]["build_distro"] = "centos9"
+
+        builder = CephBuilder()
+        builder._run_cmd = AsyncMock()
+
+        await builder.pull()
+
+        builder._run_cmd.assert_called_once()
+        cmd = builder._run_cmd.call_args[0][0]
+
+        # Should have minimal args: python, script, distro, image-sources
+        assert cmd[0] in ["python3", sys.executable]
+        assert "build-with-container.py" in cmd[1]
+        assert "-d" in cmd and "centos9" in cmd
+        assert "--image-sources" in cmd
+        assert cmd[cmd.index("--image-sources") + 1] == "pull"
+
+        # Should NOT have compilation-related args
+        assert "-b" not in cmd  # no build dir
+        assert "--homedir" not in cmd  # no homedir
+        assert "-e" not in cmd  # no execute steps
+
+    @pytest.mark.asyncio
+    async def test_pull_includes_image_variant_for_package_build(self, tmp_path):
+        """Test that pull() includes --image-variant for package-build mode."""
+        config["containers"]["ceph_builder"] = {}
+        config["containers"]["ceph_builder"]["repo"] = str(tmp_path)
+        config["containers"]["ceph_builder"]["build_distro"] = "centos9"
+        config["containers"]["ceph_builder"]["image_builder"] = "package-build"
+
+        builder = CephBuilder()
+        builder._run_cmd = AsyncMock()
+
+        await builder.pull()
+
+        cmd = builder._run_cmd.call_args[0][0]
+        assert "--image-variant" in cmd
+        assert cmd[cmd.index("--image-variant") + 1] == "packages"
+
+    @pytest.mark.asyncio
+    async def test_pull_skips_when_no_repo(self):
+        """Test that pull() skips when no repo is configured."""
+        config["containers"]["ceph_builder"] = {}
+
+        builder = CephBuilder()
+        builder._run_cmd = AsyncMock()
+
+        await builder.pull()
+
+        builder._run_cmd.assert_not_called()
