@@ -1,6 +1,6 @@
 """Tests for CephBuilder resource."""
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 import sys
 
 import pytest
@@ -289,15 +289,18 @@ class TestCephBuilder:
         config["containers"]["ceph_builder"]["repo"] = str(repo)
 
         builder = CephBuilder()
+        builder._run_cmd = AsyncMock()
 
-        # Mock _run_cmd to avoid actually running build-with-container.py
-        with patch.object(builder, "_run_cmd", new=AsyncMock()) as mock_run:
-            await builder.build()
+        await builder.build()
 
-            # Should have called _run_cmd with build-with-container.py command
-            mock_run.assert_awaited_once()
-            call_args = mock_run.call_args[0]
-            assert "build-with-container.py" in str(call_args[0])
+        # Should have called _run_cmd with minimal build-container command
+        builder._run_cmd.assert_awaited_once()
+        cmd = builder._run_cmd.call_args[0][0]
+        assert cmd[0] in ["python3", sys.executable]
+        assert "build-with-container.py" in cmd[1]
+        assert "-d" in cmd and "centos9" in cmd
+        assert "-e" in cmd
+        assert cmd[cmd.index("-e") + 1] == "build-container"
 
     @pytest.mark.asyncio
     async def test_pull_uses_minimal_command(self, tmp_path):

@@ -578,12 +578,24 @@ class CephBuilder(Container):
             return
 
         logger.info(f"{self.name}: Building builder container image")
-        # build-with-container.py builds the ceph-build container image
-        env_file, extra_args = self._prepare_build_env()
-        await self._run_cmd(
-            self._compile_cmd(env_file=env_file, extra_args=extra_args),
-            cwd=str(self.repo),
-        )
+        # Use -e build-container to only build the image, not compile
+        distro = self.config.get("build_distro", "centos9")
+        script = str(expand_path(self.repo) / "src/script/build-with-container.py")
+        python_cmd = "python3" if host.type == "remote" else sys.executable
+
+        cmd = [
+            python_cmd,
+            script,
+            "-d",
+            distro,
+            "-e",
+            "build-container",
+        ]
+
+        if self.image_builder == "package-build":
+            cmd.extend(["--image-variant", "packages"])
+
+        await self._run_cmd(cmd, cwd=str(self.repo))
         logger.info(f"{self.name}: Builder container image ready")
 
     async def create(self):
