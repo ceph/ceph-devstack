@@ -380,6 +380,8 @@ class CephNode(Container):
             f"DASHBOARD_SHOW_PASSWORD={'true' if self.dashboard_show_password else 'false'}",
             "-e",
             f"CONTAINER_NAME={self.name}",
+            "-e",
+            "IBM_TELEMETRY_DISABLED=true",
             "--entrypoint",
             "/bin/bash",
             "--name",
