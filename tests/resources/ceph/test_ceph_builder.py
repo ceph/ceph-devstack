@@ -1,4 +1,5 @@
 """Tests for CephBuilder resource."""
+
 from unittest.mock import AsyncMock, patch
 import sys
 
@@ -232,7 +233,10 @@ class TestCephBuilder:
         dot_git = worktree / REPO_DEVSTACK_DIR / "git" / "dot-git"
         assert dot_git.exists()
         assert f"--volume={dot_git}:/ceph/.git:Z,ro" in extra_args
-        assert f"--volume={main_repo / '.git'}:{CONTAINER_GIT_METADATA_DIR}:Z,ro" in extra_args
+        assert (
+            f"--volume={main_repo / '.git'}:{CONTAINER_GIT_METADATA_DIR}:Z,ro"
+            in extra_args
+        )
 
     def test_worktree_container_mounts_do_not_set_git_env(self, tmp_path):
         main_repo = tmp_path / "ceph"
@@ -280,16 +284,16 @@ class TestCephBuilder:
         """Test that build() calls build-with-container.py to build builder image."""
         repo = tmp_path / "ceph"
         repo.mkdir()
-        
+
         config["containers"]["ceph_builder"] = {}
         config["containers"]["ceph_builder"]["repo"] = str(repo)
-        
+
         builder = CephBuilder()
-        
+
         # Mock _run_cmd to avoid actually running build-with-container.py
-        with patch.object(builder, '_run_cmd', new=AsyncMock()) as mock_run:
+        with patch.object(builder, "_run_cmd", new=AsyncMock()) as mock_run:
             await builder.build()
-            
+
             # Should have called _run_cmd with build-with-container.py command
             mock_run.assert_awaited_once()
             call_args = mock_run.call_args[0]

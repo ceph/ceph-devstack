@@ -131,7 +131,7 @@ class CephNode(Container):
     @property
     def image(self) -> str:
         """Container image to use for the Ceph node.
-        
+
         When a builder is configured with a repo, uses the builder's target image.
         Otherwise falls back to configured image or default.
         """
@@ -250,8 +250,6 @@ class CephNode(Container):
     def _device_image(self, device: str) -> str:
         return f"{self.name}-{device.removeprefix('/dev/loop')}"
 
-
-
     def _binary_patch_cmd(self) -> List[str]:
         """Build command for binary-patch image creation."""
         return [
@@ -284,7 +282,9 @@ class CephNode(Container):
     async def _build_image_binary_patch(self):
         """Build runtime image using binary-patch method."""
         build_path = self.build_path
-        logger.info(f"{self.name}: building {self.image} via binary-patch in {build_path}")
+        logger.info(
+            f"{self.name}: building {self.image} via binary-patch in {build_path}"
+        )
         await self._run_cmd(self._binary_patch_cmd(), cwd=str(build_path))
 
     async def _build_image_package_build(self):
@@ -362,15 +362,17 @@ class CephNode(Container):
         # Only build if we have a local image tag (localhost/...)
         if not self.image.startswith("localhost/"):
             return
-        
+
         # Ensure builder has completed compilation
         if not self.builder.build_path.exists():
             raise RuntimeError(
                 f"{self.name}: Builder has not completed compilation. "
                 f"Build artifacts not found at {self.builder.build_path}"
             )
-        
-        logger.info(f"{self.name}: Building runtime image from {self.builder.name} artifacts")
+
+        logger.info(
+            f"{self.name}: Building runtime image from {self.builder.name} artifacts"
+        )
         await self._build_image()
 
     async def create(self):

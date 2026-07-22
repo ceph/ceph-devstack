@@ -57,7 +57,7 @@ def worktree_submodule_git_mounts(
 ) -> list[str]:
     """Return podman mounts that rewrite submodule ``.git`` files for ``/ceph``."""
     import subprocess
-    
+
     proc = subprocess.run(
         ["git", "-C", str(repo), "submodule", "foreach", "--quiet", "echo $sm_path"],
         check=False,
@@ -114,7 +114,7 @@ def worktree_container_mounts(
 
 class CephBuilder(Container):
     """Manages Ceph compilation and build artifacts.
-    
+
     This resource handles:
     - Builder container image management (via Containerfile.ceph)
     - Compilation via build-with-container.py
@@ -145,7 +145,9 @@ class CephBuilder(Container):
     @property
     def target_image(self) -> str:
         """Target image to patch with build artifacts (for binary-patch mode)."""
-        return self.config.get("target_image", self.config.get("base_image", "quay.io/ceph-ci/ceph:main"))
+        return self.config.get(
+            "target_image", self.config.get("base_image", "quay.io/ceph-ci/ceph:main")
+        )
 
     @property
     def build_subdir(self) -> str:
@@ -389,7 +391,7 @@ class CephBuilder(Container):
     def _git_value(self, args: str) -> str:
         """Execute a git command and return its output."""
         import subprocess
-        
+
         repo_path = str(expand_path(self.repo))
         logger.debug(f"{self.name}: Running git {args} in {repo_path}")
         try:
@@ -402,9 +404,7 @@ class CephBuilder(Container):
             logger.debug(f"{self.name}: git {args} returned: {result}")
             return result
         except CalledProcessError as e:
-            logger.error(
-                f"{self.name}: git {args} failed in {repo_path}: {e.stderr}"
-            )
+            logger.error(f"{self.name}: git {args} failed in {repo_path}: {e.stderr}")
             raise
 
     def _make_dist_version(self) -> str:
@@ -419,7 +419,7 @@ class CephBuilder(Container):
         """Create source distribution tarball using make-dist."""
         if not self.repo:
             return
-        
+
         # Check if this is a git worktree
         repo_path = expand_path(self.repo)
         git_path = repo_path / ".git"
@@ -430,9 +430,9 @@ class CephBuilder(Container):
                 "Skipping make-dist."
             )
             return
-        
+
         version = self._make_dist_version()
-        
+
         # Check if tarball already exists (make-dist creates ceph-<version>.tar.bz2)
         tarball_name = f"ceph-{version}.tar.bz2"
         tarball_path = repo_path / tarball_name
@@ -441,7 +441,7 @@ class CephBuilder(Container):
                 f"{self.name}: Source tarball {tarball_name} already exists, skipping make-dist"
             )
             return
-        
+
         logger.info(f"{self.name}: creating source distribution for version {version}")
         make_dist_script = repo_path / "make-dist"
         if not make_dist_script.exists():
@@ -449,7 +449,7 @@ class CephBuilder(Container):
                 f"{self.name}: make-dist script not found at {make_dist_script}, skipping"
             )
             return
-        
+
         # Run make-dist using asyncio subprocess with streaming output
         logger.info(
             f"{self.name}: Running make-dist (this may take several minutes for submodule updates)..."
@@ -461,7 +461,7 @@ class CephBuilder(Container):
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
         )
-        
+
         # Stream output to show progress
         output_lines = []
         while True:
@@ -471,11 +471,14 @@ class CephBuilder(Container):
             line_str = line.decode().rstrip()
             output_lines.append(line_str)
             # Log key progress indicators
-            if any(keyword in line_str.lower() for keyword in ['updating', 'synchronizing', 'version', 'creating']):
+            if any(
+                keyword in line_str.lower()
+                for keyword in ["updating", "synchronizing", "version", "creating"]
+            ):
                 logger.info(f"{self.name}: {line_str}")
-        
+
         await process.wait()
-        
+
         if process.returncode != 0:
             logger.error(f"{self.name}: make-dist failed")
             for line in output_lines[-20:]:  # Show last 20 lines
@@ -544,7 +547,7 @@ class CephBuilder(Container):
         if not self.repo:
             logger.info(f"{self.name}: No repo configured, skipping")
             return
-        
+
         logger.info(f"{self.name}: Building builder container image")
         # build-with-container.py builds the ceph-build container image
         env_file, extra_args = self._prepare_build_env()
@@ -559,12 +562,14 @@ class CephBuilder(Container):
         if not self.repo:
             logger.warning(f"{self.name}: No repo configured, skipping")
             return
-        
+
         logger.info(f"{self.name}: Running build-with-container.py to compile Ceph")
         # build-with-container.py orchestrates: starts builder container + compiles
         await self.compile()
         self._verify_build_tree()
-        logger.info(f"{self.name}: Compilation complete, artifacts at {self.build_path}")
+        logger.info(
+            f"{self.name}: Compilation complete, artifacts at {self.build_path}"
+        )
 
     async def remove(self):
         """Clean up build artifacts (preserves caches)."""

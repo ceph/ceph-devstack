@@ -153,7 +153,7 @@ class CephDevStack:
             paddles_obj.env_vars["PADDLES_SQLALCHEMY_URL"] = (
                 postgres_obj.paddles_sqla_url
             )
-        
+
         # Wire ceph_builder -> ceph_node
         if (builder_spec := self.service_specs.get("ceph_builder")) and (
             node_spec := self.service_specs.get("ceph_node")
