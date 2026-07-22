@@ -445,7 +445,7 @@ services = ["postgres", "paddles"]
     def test_ceph_stack_has_expected_services(self):
         devstack = CephDevStack(stack_name="ceph")
         assert devstack.stack_name == "ceph"
-        assert set(devstack.service_specs) == {"ceph_builder", "ceph_node"}
+        assert set(devstack.service_specs) == {"ceph_node"}
         assert devstack.secrets == []
 
     async def test_ceph_stack_create_prepares_node(self):

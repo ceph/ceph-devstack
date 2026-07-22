@@ -7,16 +7,13 @@ import uuid
 
 from pathlib import Path
 from subprocess import CalledProcessError
-from typing import List, TYPE_CHECKING
+from typing import List
 
 from ceph_devstack import config, logger
 from ceph_devstack.host import host
 from ceph_devstack.resources.ceph.block_devices import BlockDeviceProvisioner
 from ceph_devstack.resources.ceph.host_loops import allocate_loop_devices
 from ceph_devstack.resources.container import Container
-
-if TYPE_CHECKING:
-    from ceph_devstack.resources.ceph.ceph_builder import CephBuilder
 
 
 DEFAULT_CEPH_IMAGE = "quay.io/ceph-ci/ceph:main"
@@ -62,7 +59,6 @@ class CephNode(Container):
         self.loop_device_count = self.config["loop_device_count"]
         self._devices: list[str] | None = None
         self._block_device_provisioner: BlockDeviceProvisioner | None = None
-        self._builder: "CephBuilder | None" = None
 
     @property
     def devices(self) -> list[str]:
@@ -75,21 +71,6 @@ class CephNode(Container):
     @property
     def config_key(self) -> str:
         return "ceph_node"
-
-    @property
-    def builder(self) -> "CephBuilder":
-        """Reference to the CephBuilder resource."""
-        if self._builder is None:
-            raise ValueError(
-                f"{self.name}: No builder configured. "
-                "CephNode requires a CephBuilder to be wired via stack integration."
-            )
-        return self._builder
-
-    @builder.setter
-    def builder(self, value: "CephBuilder"):
-        """Set the builder reference."""
-        self._builder = value
 
     @property
     def cluster_dir(self) -> Path:
@@ -130,15 +111,7 @@ class CephNode(Container):
 
     @property
     def image(self) -> str:
-        """Container image to use for the Ceph node.
-
-        When a builder is configured with a repo, uses the builder's target image.
-        Otherwise falls back to configured image or default.
-        """
-        # Check if builder has a repo configured
-        if self._builder is not None and self._builder.repo:
-            return self._builder.target_image
-        # Fall back to configured image or default
+        """Container image to use for the Ceph node."""
         return self.config.get("image", DEFAULT_CEPH_IMAGE)
 
     @property
@@ -175,13 +148,15 @@ class CephNode(Container):
 
     @property
     def image_builder(self) -> str:
-        """Get image builder mode from builder."""
-        return self.builder.image_builder
+        """Get image builder mode from config."""
+        return self.config.get("image_builder", "binary-patch")
 
     @property
     def build_path(self) -> Path:
-        """Get build path from builder."""
-        return self.builder.build_path
+        """Get build path from config."""
+        build_dir = self.config.get("build_dir", "build")
+        repo = self.config.get("repo", "~/dev/ceph")
+        return expand_path(repo) / build_dir
 
     @property
     def create_cmd(self):
@@ -252,11 +227,13 @@ class CephNode(Container):
 
     def _binary_patch_cmd(self) -> List[str]:
         """Build command for binary-patch image creation."""
+        # Base image is the target_image from config (what we're patching)
+        base_image = self.config.get("target_image", DEFAULT_CEPH_IMAGE)
         return [
             "sudo",
             "../src/script/cpatch",
             "--base",
-            self.builder.target_image,
+            base_image,
             "--target",
             self.image,
             "--core",
@@ -358,21 +335,28 @@ class CephNode(Container):
             )
 
     async def build(self):
-        """Build runtime image from CephBuilder artifacts."""
+        """Build runtime image from local build artifacts."""
         # Only build if we have a local image tag (localhost/...)
         if not self.image.startswith("localhost/"):
             return
 
-        # Ensure builder has completed compilation
-        if not self.builder.build_path.exists():
-            raise RuntimeError(
-                f"{self.name}: Builder has not completed compilation. "
-                f"Build artifacts not found at {self.builder.build_path}"
-            )
+        # Check if we have a local repo configured for building
+        repo = self.config.get("repo")
+        if not repo:
+            logger.info(f"{self.name}: skipping build (no repo configured)")
+            return
 
-        logger.info(
-            f"{self.name}: Building runtime image from {self.builder.name} artifacts"
-        )
+        repo_path = expand_path(repo)
+        if not repo_path.exists():
+            logger.error(f"{self.name}: repo not found at {repo_path}")
+            return
+
+        build_path = self.build_path
+        if not build_path.exists():
+            logger.error(f"{self.name}: build directory not found at {build_path}")
+            return
+
+        logger.info(f"{self.name}: Building runtime image from local build artifacts")
         await self._build_image()
 
     async def create(self):

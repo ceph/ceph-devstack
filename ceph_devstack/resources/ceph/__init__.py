@@ -154,13 +154,7 @@ class CephDevStack:
                 postgres_obj.paddles_sqla_url
             )
 
-        # Wire ceph_builder -> ceph_node
-        if (builder_spec := self.service_specs.get("ceph_builder")) and (
-            node_spec := self.service_specs.get("ceph_node")
-        ):
-            builder_obj = builder_spec["objects"][0]
-            for node_obj in node_spec["objects"]:
-                node_obj.builder = builder_obj
+        # No wiring needed for ceph_builder/ceph_node - they're independent stacks
 
     async def check_requirements(self):
         result = True

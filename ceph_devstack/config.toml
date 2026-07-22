@@ -27,16 +27,21 @@ services = [
 ]
 secrets = ["ssh_keypair"]
 
+[stacks.build-ceph]
+services = ["ceph_builder"]
+secrets = []
+data_dir = "~/.local/share/ceph-devstack/build-ceph"
+
 [stacks.ceph]
-services = ["ceph_builder", "ceph_node"]
+services = ["ceph_node"]
 secrets = []
 data_dir = "~/.local/share/ceph-devstack/ceph"
 
 [containers.ceph_builder]
-# CephBuilder handles compilation and build artifacts
+# CephBuilder handles compilation and build artifacts (build-ceph stack)
 # Build from a local ceph.git checkout:
 # repo = "~/dev/ceph"
-target_image = "quay.io/ceph-ci/ceph:main"  # Target image to patch with compiled binaries (binary-patch mode only)
+target_image = "quay.io/ceph-ci/ceph:main"  # Output image name (used by ceph stack)
 # build_dir = "build"              # relative to repo; passed to build-with-container.py -b
 # build_distro = "centos9"         # Selects quay.io/ceph-ci/ceph-build:centos9 for compilation
 image_builder = "package-build"     # "package-build" (default) or "binary-patch"
@@ -55,8 +60,8 @@ npm_cache = true                   # persist dashboard npm downloads
 # repo may be a git worktree; ceph-devstack mounts git metadata for builds at /ceph
 
 [containers.ceph_node]
-# CephNode handles cluster deployment and runtime
-# References ceph_builder for build artifacts (wired automatically by stack)
+# CephNode handles cluster deployment and runtime (ceph stack)
+# Uses image from build-ceph stack or pulled from registry
 image = "quay.io/ceph-ci/ceph:main"
 loop_device_count = 3
 loop_device_size = "5G"

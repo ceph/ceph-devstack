@@ -11,157 +11,116 @@ from ceph_devstack.resources.ceph.ceph_node import (
 
 
 class TestCephNodeBuild:
-    """Tests for CephNode build integration with CephBuilder."""
+    """Tests for CephNode build and configuration."""
 
     def test_image_uses_configured_tag(self):
         config["containers"]["ceph_node"]["image"] = "quay.io/ceph-ci/ceph:main"
         assert CephNode().image == "quay.io/ceph-ci/ceph:main"
 
-    def test_image_uses_builder_target_when_builder_has_repo(self, tmp_path):
-        """When builder has a repo, CephNode should use builder's target_image."""
-        from ceph_devstack.resources.ceph.ceph_builder import CephBuilder
-
-        config["containers"]["ceph_builder"] = {
-            "repo": str(tmp_path),
-            "target_image": "quay.io/ceph-ci/ceph:custom",
-        }
+    def test_image_uses_configured_value(self):
+        """CephNode should use configured image."""
         config["containers"]["ceph_node"] = {
-            "image": "quay.io/ceph-ci/ceph:main",
+            "image": "quay.io/ceph-ci/ceph:custom",
             "loop_device_count": 3,
         }
-
-        builder = CephBuilder()
         node = CephNode()
-        node.builder = builder
-
         assert node.image == "quay.io/ceph-ci/ceph:custom"
-
-    def test_image_falls_back_to_config_when_no_builder_repo(self):
-        """When builder has no repo, CephNode should use configured image."""
-        from ceph_devstack.resources.ceph.ceph_builder import CephBuilder
-
-        config["containers"]["ceph_builder"] = {}
-        config["containers"]["ceph_node"] = {
-            "image": "quay.io/ceph-ci/ceph:main",
-            "loop_device_count": 3,
-        }
-
-        builder = CephBuilder()
-        node = CephNode()
-        node.builder = builder
-
-        assert node.image == "quay.io/ceph-ci/ceph:main"
 
     def test_image_uses_default_when_no_config(self):
         """When no image configured, CephNode should use default."""
-        from ceph_devstack.resources.ceph.ceph_builder import CephBuilder
-
-        config["containers"]["ceph_builder"] = {}
         config["containers"]["ceph_node"] = {"loop_device_count": 3}
-
-        builder = CephBuilder()
         node = CephNode()
-        node.builder = builder
-
         assert node.image == DEFAULT_CEPH_IMAGE
 
     def test_repo_property_returns_empty_string(self):
-        """CephNode doesn't have its own repo - it uses builder's artifacts."""
+        """CephNode doesn't have its own repo."""
         config["containers"]["ceph_node"] = {"loop_device_count": 3}
-
         node = CephNode()
         assert node.repo == ""
 
-    def test_should_build_requires_repo(self, tmp_path):
-        """CephNode.should_build is always False - it doesn't have a repo."""
-        from ceph_devstack.resources.ceph.ceph_builder import CephBuilder
+    def test_image_builder_uses_configured_value(self):
+        """CephNode.image_builder should use configured value."""
+        config["containers"]["ceph_node"] = {
+            "loop_device_count": 3,
+            "image_builder": "package-build",
+        }
+        node = CephNode()
+        assert node.image_builder == "package-build"
 
-        config["containers"]["ceph_builder"] = {"repo": str(tmp_path)}
+    def test_image_builder_defaults_to_binary_patch(self):
+        """CephNode.image_builder should default to binary-patch."""
         config["containers"]["ceph_node"] = {"loop_device_count": 3}
-
-        builder = CephBuilder()
         node = CephNode()
-        node.builder = builder
+        assert node.image_builder == "binary-patch"
 
-        # CephNode.should_build checks self.repo which is always ""
-        assert node.should_build is False
+    def test_build_path_uses_configured_repo_and_build_dir(self, tmp_path):
+        """CephNode.build_path should use configured repo and build_dir."""
+        config["containers"]["ceph_node"] = {
+            "loop_device_count": 3,
+            "repo": str(tmp_path),
+            "build_dir": "custom-build",
+        }
+        node = CephNode()
+        assert node.build_path == tmp_path / "custom-build"
 
-    def test_should_build_skips_without_repo(self):
-        """CephNode.should_build is False when builder has no repo."""
-        from ceph_devstack.resources.ceph.ceph_builder import CephBuilder
-
-        config["containers"]["ceph_builder"] = {}
+    def test_build_path_defaults(self, tmp_path):
+        """CephNode.build_path should use defaults when not configured."""
         config["containers"]["ceph_node"] = {"loop_device_count": 3}
-
-        builder = CephBuilder()
         node = CephNode()
-        node.builder = builder
+        # Should use default repo and build_dir
+        assert node.build_path.name == "build"
 
-        assert node.should_build is False
-
-    def test_binary_patch_cmd_uses_builder_target_image(self, tmp_path):
-        from ceph_devstack.resources.ceph.ceph_builder import CephBuilder
-
-        config["containers"]["ceph_builder"] = {}
-        config["containers"]["ceph_builder"]["target_image"] = (
-            "quay.io/ceph-ci/ceph:main"
-        )
-        config["containers"]["ceph_builder"]["repo"] = str(tmp_path)
-        config["containers"]["ceph_node"] = {}
-        config["containers"]["ceph_node"]["loop_device_count"] = 3
-
-        builder = CephBuilder()
+    def test_binary_patch_cmd_uses_config_target_image(self):
+        """_binary_patch_cmd should use target_image from config."""
+        config["containers"]["ceph_node"] = {
+            "loop_device_count": 3,
+            "target_image": "quay.io/ceph-ci/ceph:main",
+            "image": "localhost/test:latest",
+        }
         node = CephNode()
-        node.builder = builder
-
         cmd = node._binary_patch_cmd()
         assert cmd[0:2] == ["sudo", "../src/script/cpatch"]
         assert "--base" in cmd
         assert "quay.io/ceph-ci/ceph:main" in cmd
-        # CephNode.image now returns builder.target_image when builder has repo
-        assert node.image == "quay.io/ceph-ci/ceph:main"
+        assert "--target" in cmd
+        assert "localhost/test:latest" in cmd
 
-    async def test_build_requires_builder_artifacts(self, tmp_path):
-        """CephNode.build() requires builder to have completed compilation."""
-        from ceph_devstack.resources.ceph.ceph_builder import CephBuilder
-
-        config["containers"]["ceph_builder"] = {}
-        config["containers"]["ceph_builder"]["repo"] = str(tmp_path)
-        config["containers"]["ceph_node"] = {}
-        config["containers"]["ceph_node"]["loop_device_count"] = 3
-
-        builder = CephBuilder()
+    async def test_build_skips_when_no_repo_configured(self):
+        """CephNode.build() should skip when no repo configured."""
+        config["containers"]["ceph_node"] = {
+            "loop_device_count": 3,
+            "image": "localhost/test:latest",
+        }
         node = CephNode()
-        node.builder = builder
-
-        # When builder has no build artifacts, build should skip
         with patch.object(node, "_build_image", new=AsyncMock()) as mock_build:
             await node.build()
-            # Should not call _build_image when no artifacts
             mock_build.assert_not_awaited()
 
-    async def test_build_uses_builder_artifacts(self, tmp_path):
-        """CephNode.build() uses builder artifacts when available."""
-        from ceph_devstack.resources.ceph.ceph_builder import CephBuilder
+    async def test_build_skips_when_repo_not_found(self, tmp_path):
+        """CephNode.build() should skip when repo path doesn't exist."""
+        config["containers"]["ceph_node"] = {
+            "loop_device_count": 3,
+            "image": "localhost/test:latest",
+            "repo": str(tmp_path / "nonexistent"),
+        }
+        node = CephNode()
+        with patch.object(node, "_build_image", new=AsyncMock()) as mock_build:
+            await node.build()
+            mock_build.assert_not_awaited()
 
+    async def test_build_uses_local_artifacts(self, tmp_path):
+        """CephNode.build() should use local build artifacts when available."""
         build_path = tmp_path / "build"
         build_path.mkdir()
         (build_path / "build.ninja").write_text("")
 
-        config["containers"]["ceph_builder"] = {}
-        config["containers"]["ceph_builder"]["repo"] = str(tmp_path)
-        config["containers"]["ceph_builder"]["build_dir"] = "build"
-        config["containers"]["ceph_builder"]["target_image"] = "localhost/test:latest"
-        config["containers"]["ceph_node"] = {}
-        config["containers"]["ceph_node"]["loop_device_count"] = 3
-
-        builder = CephBuilder()
+        config["containers"]["ceph_node"] = {
+            "loop_device_count": 3,
+            "repo": str(tmp_path),
+            "build_dir": "build",
+            "image": "localhost/test:latest",
+        }
         node = CephNode()
-        node.builder = builder
-
-        # Node image must start with localhost/ to trigger build
-        assert node.image.startswith("localhost/")
-
         with patch.object(node, "_build_image", new=AsyncMock()) as mock_build:
             await node.build()
             mock_build.assert_awaited_once()
