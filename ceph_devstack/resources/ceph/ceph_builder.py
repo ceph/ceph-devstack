@@ -549,12 +549,23 @@ class CephBuilder(Container):
             return
 
         logger.info(f"{self.name}: Pulling builder container image")
-        # Use build-with-container.py with --image-sources pull to force pulling
-        env_file, extra_args = self._prepare_build_env()
-        cmd = self._compile_cmd(env_file=env_file, extra_args=extra_args)
-        # Insert --image-sources pull after the script path
-        cmd.insert(2, "--image-sources")
-        cmd.insert(3, "pull")
+        # Build minimal command to pull image without compilation
+        distro = self.config.get("build_distro", "centos9")
+        script = str(expand_path(self.repo) / "src/script/build-with-container.py")
+        python_cmd = "python3" if host.type == "remote" else sys.executable
+
+        cmd = [
+            python_cmd,
+            script,
+            "-d",
+            distro,
+            "--image-sources",
+            "pull",
+        ]
+
+        if self.image_builder == "package-build":
+            cmd.extend(["--image-variant", "packages"])
+
         await self._run_cmd(cmd, cwd=str(self.repo))
         logger.info(f"{self.name}: Builder container image pulled")
 
