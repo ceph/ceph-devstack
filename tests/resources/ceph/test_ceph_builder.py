@@ -314,17 +314,18 @@ class TestCephBuilder:
         builder._run_cmd.assert_called_once()
         cmd = builder._run_cmd.call_args[0][0]
 
-        # Should have minimal args: python, script, distro, image-sources
+        # Should have minimal args: python, script, distro, image-sources, execute container
         assert cmd[0] in ["python3", sys.executable]
         assert "build-with-container.py" in cmd[1]
         assert "-d" in cmd and "centos9" in cmd
         assert "--image-sources" in cmd
         assert cmd[cmd.index("--image-sources") + 1] == "pull"
+        assert "-e" in cmd
+        assert cmd[cmd.index("-e") + 1] == "container"
 
         # Should NOT have compilation-related args
         assert "-b" not in cmd  # no build dir
         assert "--homedir" not in cmd  # no homedir
-        assert "-e" not in cmd  # no execute steps
 
     @pytest.mark.asyncio
     async def test_pull_includes_image_variant_for_package_build(self, tmp_path):

@@ -561,6 +561,8 @@ class CephBuilder(Container):
             distro,
             "--image-sources",
             "pull",
+            "-e",
+            "container",
         ]
 
         if self.image_builder == "package-build":
