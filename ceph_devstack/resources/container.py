@@ -63,7 +63,7 @@ class Container(PodmanResource):
     def image(self):
         if self.repo:
             return f"localhost/{self.image_name}"
-        return self.config["image"]
+        return self.config.get("image", "")
 
     @property
     def image_tag(self):

@@ -124,6 +124,24 @@ class CephNode(Container):
         return CONTAINER_CLUSTER_DIR
 
     @property
+    def repo(self) -> str:
+        """CephNode doesn't have its own repo - it uses builder's artifacts."""
+        return ""
+
+    @property
+    def image(self) -> str:
+        """Container image to use for the Ceph node.
+        
+        When a builder is configured with a repo, uses the builder's target image.
+        Otherwise falls back to configured image or default.
+        """
+        # Check if builder has a repo configured
+        if self._builder is not None and self._builder.repo:
+            return self._builder.target_image
+        # Fall back to configured image or default
+        return self.config.get("image", DEFAULT_CEPH_IMAGE)
+
+    @property
     def mon_id(self) -> str:
         return self.config.get("mon_id", "a")
 
@@ -193,12 +211,6 @@ class CephNode(Container):
             "/dev/fuse:/dev/fuse",
             "-v",
             "/dev/disk:/dev/disk",
-            "-v",
-            "/dev/null:/sys/class/dmi/id/board_serial",
-            "-v",
-            "/dev/null:/sys/class/dmi/id/chassis_serial",
-            "-v",
-            "/dev/null:/sys/class/dmi/id/product_serial",
             "--device",
             "/dev/net/tun",
             *[f"--device={device}" for device in self.devices],

@@ -226,6 +226,9 @@ class CephDevStack:
         logger.info("Starting containers...")
         for spec in self.service_specs.values():
             for object in spec["objects"]:
+                # Skip CephBuilder - it's a build-time resource, not a runtime container
+                if object.__class__.__name__ == "CephBuilder":
+                    continue
                 await object.start()
         if "teuthology" in self.service_specs:
             logger.info(
