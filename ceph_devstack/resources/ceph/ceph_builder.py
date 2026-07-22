@@ -542,6 +542,22 @@ class CephBuilder(Container):
         except FileNotFoundError:
             return False
 
+    async def pull(self):
+        """Pull the builder container image using build-with-container.py."""
+        if not self.repo:
+            logger.info(f"{self.name}: No repo configured, skipping")
+            return
+
+        logger.info(f"{self.name}: Pulling builder container image")
+        # Use build-with-container.py with --image-sources pull to force pulling
+        env_file, extra_args = self._prepare_build_env()
+        cmd = self._compile_cmd(env_file=env_file, extra_args=extra_args)
+        # Insert --image-sources pull after the script path
+        cmd.insert(2, "--image-sources")
+        cmd.insert(3, "pull")
+        await self._run_cmd(cmd, cwd=str(self.repo))
+        logger.info(f"{self.name}: Builder container image pulled")
+
     async def build(self):
         """Build the builder container image using build-with-container.py."""
         if not self.repo:
