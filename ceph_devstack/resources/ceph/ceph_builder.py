@@ -354,6 +354,7 @@ class CephBuilder(Container):
             cmake_extra_args.append("-DWITH_SCCACHE=ON")
         lines.append(f"CEPH_EXTRA_CMAKE_ARGS={' '.join(cmake_extra_args)}")
         lines.append("IBM_TELEMETRY_DISABLED=true")
+        lines.append("DWZ=false")
 
         if not lines:
             return None, extra_args
