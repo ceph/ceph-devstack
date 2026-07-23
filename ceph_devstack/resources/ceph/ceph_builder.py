@@ -599,7 +599,12 @@ class CephBuilder(Container):
         logger.info(f"{self.name}: Builder container image ready")
 
     async def create(self):
-        """Run build-with-container.py to start builder container and compile Ceph."""
+        """Prepare for compilation (no-op for CephBuilder)."""
+        # CephBuilder doesn't need a create step - compilation happens in start()
+        pass
+
+    async def start(self):
+        """Run build-with-container.py to compile Ceph."""
         if not self.repo:
             logger.warning(f"{self.name}: No repo configured, skipping")
             return

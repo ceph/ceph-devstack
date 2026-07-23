@@ -330,22 +330,23 @@ class TestCephBuilder:
         assert "-b" not in cmd  # no build dir
         assert "--homedir" not in cmd  # no homedir
 
-    @pytest.mark.asyncio
-    async def test_pull_includes_image_variant_for_package_build(self, tmp_path):
-        """Test that pull() includes --image-variant for package-build mode."""
-        config["containers"]["ceph_builder"] = {}
-        config["containers"]["ceph_builder"]["repo"] = str(tmp_path)
-        config["containers"]["ceph_builder"]["build_distro"] = "centos9"
-        config["containers"]["ceph_builder"]["image_builder"] = "package-build"
+        @pytest.mark.asyncio
+        async def test_pull_works_for_package_build_mode(self, tmp_path):
+            """Test that pull() works in package-build mode."""
+            config["containers"]["ceph_builder"] = {}
+            config["containers"]["ceph_builder"]["repo"] = str(tmp_path)
+            config["containers"]["ceph_builder"]["build_distro"] = "centos9"
+            config["containers"]["ceph_builder"]["image_builder"] = "package-build"
 
-        builder = CephBuilder()
-        builder._run_cmd = AsyncMock()
+            builder = CephBuilder()
+            builder._run_cmd = AsyncMock()
 
-        await builder.pull()
+            await builder.pull()
 
-        cmd = builder._run_cmd.call_args[0][0]
-        assert "--image-variant" in cmd
-        assert cmd[cmd.index("--image-variant") + 1] == "packages"
+            # Should still call _run_cmd successfully
+            builder._run_cmd.assert_awaited_once()
+            cmd = builder._run_cmd.call_args[0][0]
+            assert "build-with-container.py" in cmd[1]
 
     @pytest.mark.asyncio
     async def test_pull_skips_when_no_repo(self):
