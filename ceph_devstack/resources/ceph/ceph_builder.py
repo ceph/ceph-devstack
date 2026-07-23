@@ -345,6 +345,14 @@ class CephBuilder(Container):
 
         lines, sccache_extra = self._sccache_build_env(repo)
         extra_args.extend(sccache_extra)
+        cmake_extra_args = [
+            "-DALLOCATOR=tcmalloc",
+            "-DWITH_SYSTEM_BOOST=OFF",
+            "-DWITH_BOOST_VALGRIND=ON",
+        ]
+        if self.sccache_enabled:
+            cmake_extra_args.append("-DWITH_SCCACHE=ON")
+        lines.append(f"CEPH_EXTRA_CMAKE_ARGS={' '.join(cmake_extra_args)}")
 
         if not lines:
             return None, extra_args
