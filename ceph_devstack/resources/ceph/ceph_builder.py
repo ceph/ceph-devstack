@@ -377,7 +377,7 @@ class CephBuilder(Container):
         for step in self.compile_steps:
             cmd.extend(["-e", step])
         if self.image_builder == "package-build":
-            cmd.extend(["--image-variant", "packages"])
+            # cmd.extend(["--image-variant", "packages"])
             # Pass version to build-with-container.py so make-srpm.sh can find existing tarball
             version = self._make_dist_version()
             cmd.extend(["--ceph-version", version])
@@ -565,8 +565,8 @@ class CephBuilder(Container):
             "container",
         ]
 
-        if self.image_builder == "package-build":
-            cmd.extend(["--image-variant", "packages"])
+        # if self.image_builder == "package-build":
+        #     cmd.extend(["--image-variant", "packages"])
 
         await self._run_cmd(cmd, cwd=str(self.repo))
         logger.info(f"{self.name}: Builder container image pulled")
@@ -592,8 +592,8 @@ class CephBuilder(Container):
             "build-container",
         ]
 
-        if self.image_builder == "package-build":
-            cmd.extend(["--image-variant", "packages"])
+        # if self.image_builder == "package-build":
+        #     cmd.extend(["--image-variant", "packages"])
 
         await self._run_cmd(cmd, cwd=str(self.repo))
         logger.info(f"{self.name}: Builder container image ready")
