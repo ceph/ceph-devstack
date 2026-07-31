@@ -22,7 +22,7 @@ require {
 	class dir mounton;
 
 	type proc_kcore_t;
-	class file mounton;
+	class file { getattr mounton open read };
 
 	type device_t;
 	class filesystem remount;
@@ -78,8 +78,10 @@ require {
 
 	type tun_tap_device_t;
 
-	class sock_file write;
+	class sock_file { getattr write };
 	class unix_stream_socket connectto;
+
+	type udev_var_run_t;
 }
 
 #============= container_init_t ==============
@@ -126,3 +128,7 @@ allow container_init_t tun_tap_device_t:chr_file mounton;
 allow container_t user_tmp_t:sock_file write;
 allow container_t unconfined_t:unix_stream_socket connectto;
 allow container_t fixed_disk_device_t:blk_file setattr;
+
+allow container_init_t udev_var_run_t:dir { ioctl mounton read };
+allow container_init_t udev_var_run_t:file { getattr open read };
+allow container_init_t udev_var_run_t:sock_file getattr;

@@ -238,6 +238,8 @@ class TestNode(LoopDeviceMixin, Container):
             "/dev/fuse:/dev/fuse",
             "-v",
             "/dev/disk:/dev/disk",
+            "-v",
+            "/run/udev:/run/udev:ro",
             # cephadm tries to access these DMI-related files, and by default they
             # have 600 permissions on the host. It appears to be ok if they are
             # empty, though.
