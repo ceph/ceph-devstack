@@ -23,6 +23,7 @@ services = [
     "pulpito",
     "teuthology",
     "testnode",
+    "devstack_api",
     "archive",
     "package_repo",
     "registry",
@@ -100,9 +101,14 @@ image = "quay.io/ceph-infra/pulpito:main"
 
 [containers.testnode]
 count = 3
+pre_warm = 3
 loop_device_count = 1
 loop_device_size = "5G"
 image = "quay.io/ceph-infra/teuthology-testnode:main"
+
+[containers.devstack_api]
+image = "quay.io/ceph-infra/teuthology-dev:main"
+port = 8090
 
 [containers.teuthology]
 image = "quay.io/ceph-infra/teuthology-dev:main"

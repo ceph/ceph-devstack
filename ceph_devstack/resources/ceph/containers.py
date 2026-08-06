@@ -441,6 +441,56 @@ class Registry(Container):
                 )
 
 
+class DevStackAPI(Container):
+    """HTTP API for on-demand testnode provisioning.
+
+    Runs the ceph_devstack.api server, with access to the host's podman
+    socket so it can create/destroy testnode containers on demand.
+    """
+
+    _name = "devstack_api"
+
+    @property
+    def config_key(self) -> str:
+        return "devstack_api"
+
+    @property
+    def create_cmd(self):
+        port = self.config.get("port", 8090)
+        podman_socket = f"/run/user/{os.getuid()}/podman/podman.sock"
+        return [
+            "podman",
+            "container",
+            "create",
+            "-i",
+            "--network",
+            "ceph-devstack",
+            "-p",
+            f"{port}:{port}",
+            "-v",
+            f"{podman_socket}:/run/podman/podman.sock",
+            "--health-cmd",
+            f"CMD curl -sf http://localhost:{port}/health",
+            "--health-interval",
+            "10s",
+            "--health-retries",
+            "5",
+            "--health-timeout",
+            "5s",
+            "--name",
+            "{name}",
+            "{image}",
+            "python3",
+            "-m",
+            "aiohttp.web",
+            "-H",
+            "0.0.0.0",
+            "-P",
+            str(port),
+            "ceph_devstack.api:create_app",
+        ]
+
+
 class Teuthology(Container):
     cmd_vars: List[str] = ["name", "image", "image_tag", "archive_dir"]
 

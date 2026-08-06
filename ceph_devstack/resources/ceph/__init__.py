@@ -16,6 +16,7 @@ from ceph_devstack.resources.misc import Secret, Network
 from ceph_devstack.resources.ceph.containers import (
     CONTAINER_CEPH_REPO_PATH,
     CONTAINER_CEPH_REPO_URL,
+    DevStackAPI,
     Postgres,
     Beanstalk,
     Paddles,
@@ -106,6 +107,7 @@ SERVICES: dict[str, Type[StackResource]] = {
     "pulpito": Pulpito,
     "teuthology": Teuthology,
     "testnode": TestNode,
+    "devstack_api": DevStackAPI,
     "archive": Archive,
     "package_repo": PackageRepo,
     "registry": Registry,
