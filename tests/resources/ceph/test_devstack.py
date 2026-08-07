@@ -37,17 +37,18 @@ class TestDevStack:
         self, tmp_path, create_log_file
     ):
         config["data_dir"] = str(tmp_path)
+        devstack = CephDevStack()
+        stack_dir = devstack.data_dir
         f = io.StringIO()
         content = "custom log content"
 
         create_log_file(
-            tmp_path,
+            stack_dir,
             timestamp=datetime.now() - timedelta(days=40),
         )
-        create_log_file(tmp_path, timestamp=datetime.now(), content=content)
+        create_log_file(stack_dir, timestamp=datetime.now(), content=content)
 
         with contextlib.redirect_stdout(f):
-            devstack = CephDevStack()
             await devstack.logs()
         assert content in f.getvalue()
 
@@ -55,19 +56,20 @@ class TestDevStack:
         self, tmp_path, create_log_file
     ):
         config["data_dir"] = str(tmp_path)
+        devstack = CephDevStack()
+        stack_dir = devstack.data_dir
         f = io.StringIO()
         content = "".join(
             secrets.choice(string.ascii_letters + string.digits)
             for _ in range(6 * 8 * 1024)
         )
         create_log_file(
-            tmp_path,
+            stack_dir,
             timestamp=datetime.now(),
             content=content,
         )
 
         with contextlib.redirect_stdout(f):
-            devstack = CephDevStack()
             await devstack.logs()
         assert content == f.getvalue()
 
@@ -75,19 +77,21 @@ class TestDevStack:
         self, tmp_path, create_log_file
     ):
         config["data_dir"] = str(tmp_path)
+        devstack = CephDevStack()
+        stack_dir = devstack.data_dir
         f = io.StringIO()
         content = "custom log message"
         now = datetime.now()
 
         create_log_file(
-            tmp_path,
+            stack_dir,
             timestamp=now,
             test_type="ceph",
             job_id="1",
             content="another log",
         )
         create_log_file(
-            tmp_path,
+            stack_dir,
             timestamp=now,
             test_type="ceph",
             job_id="2",
@@ -95,7 +99,6 @@ class TestDevStack:
         )
 
         with contextlib.redirect_stdout(f):
-            devstack = CephDevStack()
             await devstack.logs(job_id="2")
         assert content in f.getvalue()
 
@@ -103,20 +106,21 @@ class TestDevStack:
         self, tmp_path, create_log_file
     ):
         config["data_dir"] = str(tmp_path)
+        devstack = CephDevStack()
+        stack_dir = devstack.data_dir
         f = io.StringIO()
         content = "custom content"
         create_log_file(
-            tmp_path,
+            stack_dir,
             timestamp=datetime.now(),
         )
         run_name: pathlib.Path = create_log_file(
-            tmp_path,
+            stack_dir,
             timestamp=datetime.now() - timedelta(days=3),
             content=content,
         ).parent.parent
 
         with contextlib.redirect_stdout(f):
-            devstack = CephDevStack()
             await devstack.logs(run_name=run_name)
         assert content in f.getvalue()
 
@@ -124,9 +128,10 @@ class TestDevStack:
         self, tmp_path, create_log_file
     ):
         config["data_dir"] = str(tmp_path)
+        devstack = CephDevStack()
+        stack_dir = devstack.data_dir
         f = io.StringIO()
-        log_file = create_log_file(tmp_path)
+        log_file = create_log_file(stack_dir)
         with contextlib.redirect_stdout(f):
-            devstack = CephDevStack()
             await devstack.logs(locate=True)
         assert str(log_file) in f.getvalue()

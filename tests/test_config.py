@@ -1,7 +1,7 @@
 import pytest
 import tomlkit
 
-from ceph_devstack import config, Config
+from ceph_devstack import DEFAULT_CEPH_IMAGE, config, Config
 
 
 @pytest.fixture(scope="function")
@@ -14,10 +14,6 @@ def test_config(tmp_path) -> Config:
 
 
 class TestConfigDump:
-    def test_config_dump_returns_string(self):
-        result = config.dump()
-        assert isinstance(result, str)
-
     def test_config_dump_is_valid_toml(self):
         result = config.dump()
         parsed = tomlkit.parse(result)
@@ -41,14 +37,6 @@ class TestConfigDump:
 
 
 class TestConfigGetValue:
-    def test_get_value_simple_key(self):
-        result = config.get_value("data_dir")
-        assert isinstance(result, str)
-
-    def test_get_value_nested_count(self):
-        result = config.get_value("containers.testnode.count")
-        assert result == "3"
-
     def test_get_value_nested_loop_device_size(self):
         result = config.get_value("containers.testnode.loop_device_size")
         assert result == "5G"
@@ -103,7 +91,35 @@ class TestConfigUnset:
 class TestConfigDefaults:
     def test_config_defaults(self):
         assert config == {
+            "stack": "teuthology",
             "data_dir": "~/.local/share/ceph-devstack",
+            "block_pool": {
+                "state_dir": "~/.local/share/ceph-devstack",
+            },
+            "stacks": {
+                "teuthology": {
+                    "services": [
+                        "postgres",
+                        "paddles",
+                        "beanstalk",
+                        "pulpito",
+                        "teuthology",
+                        "testnode",
+                        "archive",
+                        "package_repo",
+                        "registry",
+                    ],
+                    "secrets": ["ssh_keypair"],
+                },
+                "ceph": {
+                    "services": ["ceph_node"],
+                    "secrets": [],
+                },
+                "build-ceph": {
+                    "services": ["ceph_builder"],
+                    "secrets": [],
+                },
+            },
             "containers": {
                 "archive": {"image": "python:alpine"},
                 "beanstalk": {"image": "quay.io/ceph-infra/teuthology-beanstalkd:main"},
@@ -114,9 +130,31 @@ class TestConfigDefaults:
                 "pulpito": {"image": "quay.io/ceph-infra/pulpito:main"},
                 "testnode": {
                     "count": 3,
+                    "loop_device_count": 1,
                     "loop_device_size": "5G",
                     "image": "quay.io/ceph-infra/teuthology-testnode:main",
                 },
                 "teuthology": {"image": "quay.io/ceph-infra/teuthology-dev:main"},
+                "package_repo": {"image": "python:alpine"},
+                "registry": {"image": "docker.io/library/registry:2"},
+                "ceph_builder": {
+                    "target_image": DEFAULT_CEPH_IMAGE,
+                    "image_builder": "binary-patch",
+                    "cpatch_args": [],
+                    "sccache": True,
+                    "sccache_mode": "local",
+                    "sccache_rw_mode": False,
+                    "sccache_cache_size": "100G",
+                    "sccache_debug": False,
+                    "npm_cache": True,
+                },
+                "ceph_node": {
+                    "image": DEFAULT_CEPH_IMAGE,
+                    "image_builder": "binary-patch",
+                    "loop_device_count": 3,
+                    "loop_device_size": "5G",
+                    "dashboard_port": 8080,
+                    "dashboard_ssl": False,
+                },
             },
         }

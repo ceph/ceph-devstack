@@ -1,4 +1,86 @@
+stack = "teuthology"
 data_dir = "~/.local/share/ceph-devstack"
+
+[block_pool]
+state_dir = "~/.local/share/ceph-devstack"
+# Dedicated empty block device or partition. Whole disks are allowed when
+# empty; disks with existing partitions must use a partition path instead.
+# Enrollment reads/writes the parent directly: your user must be able to
+# open the device for read/write (typically membership in the disk group).
+# First run requires allow_enroll = true; the tool writes a tail marker and
+# refuses non-empty or foreign devices. If block_pool.json is lost but the
+# marker remains, delete the state file and start again; the pool reclaims
+# the marker automatically.
+# parent = "/dev/nvme0n1"
+# parent = "/dev/nvme0n1p1"
+# allow_enroll = true
+
+[stacks.teuthology]
+services = [
+    "postgres",
+    "paddles",
+    "beanstalk",
+    "pulpito",
+    "teuthology",
+    "testnode",
+    "archive",
+    "package_repo",
+    "registry",
+]
+secrets = ["ssh_keypair"]
+
+[stacks.build-ceph]
+services = ["ceph_builder"]
+secrets = []
+
+[stacks.ceph]
+services = ["ceph_node"]
+secrets = []
+
+[containers.ceph_builder]
+# CephBuilder handles compilation and build artifacts (build-ceph stack)
+# Build from a local ceph.git checkout:
+# repo = "~/dev/ceph"
+target_image = "quay.ceph.io/ceph-ci/ceph:main"  # Output image name (used by ceph stack)
+# build_dir = "build"              # relative to repo; passed to build-with-container.py -b
+# build_distro = "centos9"         # Selects quay.io/ceph-ci/ceph-build:centos9 for compilation
+                                   # In binary-patch mode, auto-detected from target_image Python
+                                   # version when not set (e.g. Python 3.12 -> centos10).
+image_builder = "binary-patch"     # or "package-build" (RPMs + container/build.sh via CUSTOM_CEPH_REPO_URL)
+cpatch_args = []                   # cpatch component flags (binary-patch only); e.g. ["--core"]
+# build_image = true               # Build the builder container image locally instead of pulling
+                                   # from the registry. Default is false (pull pre-published image).
+builder_image_repo = "quay.ceph.io/ceph-ci/ceph-build"  # Registry repo for the builder container image
+# builder_image_variant = "default"  # Builder image variant (default, debug, etc.)
+
+# build_steps = ["build"]          # compilation steps for build-with-container.py
+sccache = true                     # local disk cache (see sccache.conf); set to false to disable
+sccache_mode = "local"             # local (default) or s3 for shared remote cache
+sccache_rw_mode = false            # enable read-write mode (requires AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in environment for S3)
+# sccache_cache_path = "~/.local/share/ceph-devstack/cache/sccache"  # override default cache location
+sccache_cache_size = "100G"        # local cache size limit
+sccache_debug = false              # enable SCCACHE_LOG=debug on build stdout
+# sccache_conf = "/path/to/sccache.conf"  # override bundled config entirely
+npm_cache = true                   # persist dashboard npm downloads
+# npm_cache_path = "~/.local/share/ceph-devstack/cache/npm"  # override npm cache location
+# dnf_cache = false                  # persist dnf downloads when rebuilding ceph-build images
+# dnf_cache_path = "~/.local/share/ceph-devstack/cache/dnf"  # override dnf cache base dir
+# repo may be a git worktree; ceph-devstack mounts git metadata for builds at /ceph
+
+[containers.ceph_node]
+# CephNode handles cluster deployment and runtime (ceph stack)
+# Uses image from build-ceph stack or pulled from registry
+image = "quay.ceph.io/ceph-ci/ceph:main"
+image_builder = "binary-patch"     # or "package-build" (expect localhost image from ceph_builder)
+loop_device_count = 3
+loop_device_size = "5G"
+dashboard_port = 8080
+dashboard_ssl = false
+# dashboard_user = "admin"
+# dashboard_password = "admin"
+# dashboard_show_password = false    # log dashboard password on container start
+# dashboard = false                  # disable mgr dashboard
+# image = "localhost/ceph-devstack:main"
 
 [containers.archive]
 image = "python:alpine"
@@ -17,8 +99,17 @@ image = "quay.io/ceph-infra/pulpito:main"
 
 [containers.testnode]
 count = 3
+loop_device_count = 1
 loop_device_size = "5G"
 image = "quay.io/ceph-infra/teuthology-testnode:main"
 
 [containers.teuthology]
 image = "quay.io/ceph-infra/teuthology-dev:main"
+
+[containers.package_repo]
+image = "python:alpine"
+# packages_dir = "~/dev/ceph/build/rpmbuild/RPMS"  # Override: path to built packages
+# If unset, derived from containers.ceph_builder.repo + build_dir
+
+[containers.registry]
+image = "docker.io/library/registry:2"

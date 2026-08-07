@@ -358,6 +358,35 @@ class TestFixableRequirementSuggestMsg:
 
 
 class TestCheckRequirements:
+    @pytest.fixture(autouse=True)
+    def _isolate_host_probes(self):
+        """Keep check_requirements() unit tests off real devices/sysfs."""
+        with (
+            patch(
+                "ceph_devstack.requirements.host.selinux_enforcing",
+                new_callable=AsyncMock,
+                return_value=False,
+            ),
+            patch(
+                "ceph_devstack.requirements.host.apparmor_enabled",
+                new_callable=AsyncMock,
+                return_value=False,
+            ),
+            patch(
+                "ceph_devstack.resources.ceph.requirements.BlockPoolDiskGroup"
+            ) as MockDiskGroup,
+            patch(
+                "ceph_devstack.resources.ceph.requirements.BlockPoolParentAccessible"
+            ) as MockParentAccessible,
+        ):
+            MockDiskGroup.return_value = AsyncMock(
+                evaluate=AsyncMock(return_value=True)
+            )
+            MockParentAccessible.return_value = AsyncMock(
+                evaluate=AsyncMock(return_value=True)
+            )
+            yield
+
     async def test_check_requirements_returns_false_when_podman_not_platform(self):
         with patch("ceph_devstack.requirements.PodmanPlatform") as MockPlatform:
             mock_platform = AsyncMock()
@@ -375,6 +404,11 @@ class TestCheckRequirements:
             patch("ceph_devstack.requirements.PodmanVersion") as MockVersion,
             patch("ceph_devstack.requirements.KernelVersionForOverlay") as MockKernel,
             patch("ceph_devstack.requirements.CgroupV2") as MockCgroup,
+            patch(
+                "ceph_devstack.requirements.KernelVersionForCgroupV2"
+            ) as MockKernelCgroup,
+            patch("ceph_devstack.requirements.PodmanRuntime") as MockRuntime,
+            patch("ceph_devstack.requirements.SysctlValue") as MockSysctl,
         ):
             MockLocalHost.os_type = MagicMock(return_value="centos")
             MockPlatform.return_value = AsyncMock(evaluate=AsyncMock(return_value=True))
@@ -382,6 +416,11 @@ class TestCheckRequirements:
             MockVersion.return_value = AsyncMock(evaluate=AsyncMock(return_value=True))
             MockKernel.return_value = AsyncMock(evaluate=AsyncMock(return_value=True))
             MockCgroup.return_value = AsyncMock(evaluate=AsyncMock(return_value=True))
+            MockKernelCgroup.return_value = AsyncMock(
+                evaluate=AsyncMock(return_value=True)
+            )
+            MockRuntime.return_value = AsyncMock(evaluate=AsyncMock(return_value=True))
+            MockSysctl.return_value = AsyncMock(evaluate=AsyncMock(return_value=True))
             result = await requirements.check_requirements()
             assert result is False
 
@@ -397,7 +436,6 @@ class TestCheckRequirements:
                 "ceph_devstack.requirements.KernelVersionForCgroupV2"
             ) as MockKernelCgroup,
             patch("ceph_devstack.requirements.PodmanRuntime") as MockRuntime,
-            patch("ceph_devstack.requirements.host.selinux_enforcing") as mock_selinux,
             patch("ceph_devstack.requirements.SysctlValue") as MockSysctl,
         ):
             MockLocalHost.os_type = MagicMock(return_value="centos")
@@ -410,7 +448,6 @@ class TestCheckRequirements:
                 evaluate=AsyncMock(return_value=True)
             )
             MockRuntime.return_value = AsyncMock(evaluate=AsyncMock(return_value=True))
-            mock_selinux.return_value = False
             MockSysctl.return_value = AsyncMock(evaluate=AsyncMock(return_value=True))
             result = await requirements.check_requirements()
             assert result is True
@@ -427,7 +464,7 @@ class TestCheckRequirements:
                 "ceph_devstack.requirements.KernelVersionForCgroupV2"
             ) as MockKernelCgroup,
             patch("ceph_devstack.requirements.PodmanRuntime") as MockRuntime,
-            patch("ceph_devstack.requirements.host.selinux_enforcing") as mock_selinux,
+            patch("ceph_devstack.requirements.SysctlValue") as MockSysctl,
         ):
             MockLocalHost.os_type = MagicMock(return_value="centos")
             MockPlatform.return_value = AsyncMock(evaluate=AsyncMock(return_value=True))
@@ -439,7 +476,7 @@ class TestCheckRequirements:
             mock_kernel_cgroup.evaluate = AsyncMock(return_value=True)
             MockKernelCgroup.return_value = mock_kernel_cgroup
             MockRuntime.return_value = AsyncMock(evaluate=AsyncMock(return_value=False))
-            mock_selinux.return_value = False
+            MockSysctl.return_value = AsyncMock(evaluate=AsyncMock(return_value=True))
             result = await requirements.check_requirements()
             assert result is False
 
@@ -455,8 +492,13 @@ class TestCheckRequirements:
                 "ceph_devstack.requirements.KernelVersionForCgroupV2"
             ) as MockKernelCgroup,
             patch("ceph_devstack.requirements.PodmanRuntime") as MockRuntime,
-            patch("ceph_devstack.requirements.host.selinux_enforcing") as mock_selinux,
+            patch(
+                "ceph_devstack.requirements.host.selinux_enforcing",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
             patch("ceph_devstack.requirements.SELinuxBoolean") as MockSELinuxBoolean,
+            patch("ceph_devstack.requirements.SysctlValue") as MockSysctl,
         ):
             MockLocalHost.os_type = MagicMock(return_value="centos")
             MockPlatform.return_value = AsyncMock(evaluate=AsyncMock(return_value=True))
@@ -468,10 +510,10 @@ class TestCheckRequirements:
                 evaluate=AsyncMock(return_value=True)
             )
             MockRuntime.return_value = AsyncMock(evaluate=AsyncMock(return_value=True))
-            mock_selinux.return_value = True
             MockSELinuxBoolean.return_value = AsyncMock(
                 evaluate=AsyncMock(return_value=False)
             )
+            MockSysctl.return_value = AsyncMock(evaluate=AsyncMock(return_value=True))
             result = await requirements.check_requirements()
             assert result is False
 
@@ -487,7 +529,6 @@ class TestCheckRequirements:
                 "ceph_devstack.requirements.KernelVersionForCgroupV2"
             ) as MockKernelCgroup,
             patch("ceph_devstack.requirements.PodmanRuntime") as MockRuntime,
-            patch("ceph_devstack.requirements.host.selinux_enforcing") as mock_selinux,
             patch("ceph_devstack.requirements.SysctlValue") as MockSysctl,
         ):
             MockLocalHost.os_type = MagicMock(return_value="centos")
@@ -500,7 +541,6 @@ class TestCheckRequirements:
                 evaluate=AsyncMock(return_value=True)
             )
             MockRuntime.return_value = AsyncMock(evaluate=AsyncMock(return_value=True))
-            mock_selinux.return_value = False
             MockSysctl.return_value = AsyncMock(evaluate=AsyncMock(return_value=False))
             result = await requirements.check_requirements()
             assert result is False

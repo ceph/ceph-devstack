@@ -6,8 +6,11 @@ import tempfile
 
 from subprocess import CalledProcessError
 
+from typing import Type
+
 from ceph_devstack import config, logger
 from ceph_devstack.host import host
+from ceph_devstack.resources import StackResource
 from ceph_devstack.resources.misc import Secret, Network
 from ceph_devstack.resources.ceph.containers import (
     Postgres,
@@ -17,11 +20,18 @@ from ceph_devstack.resources.ceph.containers import (
     TestNode,
     Teuthology,
     Archive,
+    PackageRepo,
+    Registry,
 )
+from ceph_devstack.resources.ceph.ceph_builder import CephBuilder
+from ceph_devstack.resources.ceph.ceph_node import CephNode, CONTAINER_CLUSTER_DIR
+from ceph_devstack.resources.ceph.host_loops import LoopDeviceMixin
 from ceph_devstack.resources.ceph.requirements import (
     HasSudo,
     LoopControlDeviceExists,
     LoopControlDeviceWriteable,
+    BlockPoolDiskGroup,
+    BlockPoolParentAccessible,
     SELinuxModule,
 )
 from ceph_devstack.resources.ceph.utils import get_runs, get_jobs
@@ -85,23 +95,57 @@ class CephDevStackNetwork(Network):
     _name = "ceph-devstack"
 
 
+SERVICES: dict[str, Type[StackResource]] = {
+    "postgres": Postgres,
+    "paddles": Paddles,
+    "beanstalk": Beanstalk,
+    "pulpito": Pulpito,
+    "teuthology": Teuthology,
+    "testnode": TestNode,
+    "archive": Archive,
+    "package_repo": PackageRepo,
+    "registry": Registry,
+    "ceph_builder": CephBuilder,
+    "ceph_node": CephNode,
+}
+
+SECRETS = {
+    "ssh_keypair": SSHKeyPair,
+}
+
+
 class CephDevStack:
     networks = [CephDevStackNetwork]
     secrets = [SSHKeyPair]
 
-    def __init__(self):
-        services = [
-            Postgres,
-            Paddles,
-            Beanstalk,
-            Pulpito,
-            Teuthology,
-            TestNode,
-            Archive,
-        ]
+    def __init__(self, stack_name: str | None = None):
+        if stack_name is None:
+            stack_name = config.get("stack", "teuthology")
+        stacks = config.get("stacks", {})
+        if stack_name not in stacks:
+            known = ", ".join(sorted(stacks)) or "(none)"
+            raise ValueError(f"Unknown stack {stack_name!r}; known stacks: {known}")
+
+        self.stack_name = stack_name
+        stack_def = stacks[stack_name]
+        self.active_services = list(stack_def.get("services", []))
+        base_dir = config.get("data_dir", "~/.local/share/ceph-devstack")
+        self.data_dir = (pathlib.Path(base_dir) / stack_name).expanduser().absolute()
+
+        # Merge per-stack container overrides into config
+        from ceph_devstack import deep_merge
+
+        for key in ("containers", "env"):
+            if key in stack_def:
+                merged = deep_merge(config.get(key, {}), stack_def[key])
+                config[key] = merged
+
         self.service_specs = {}
-        for service in services:
-            name = service.__name__.lower()
+        for name in self.active_services:
+            service = SERVICES.get(name)
+            if service is None:
+                logger.warning(f"Unknown service {name!r} in stack {self.stack_name!r}")
+                continue
             count = config["containers"][name].get("count", 1)
             if count == 0:
                 continue
@@ -109,25 +153,45 @@ class CephDevStack:
                 "obj": service,
                 "count": count,
             }
+            kwargs: dict[str, object] = {
+                "data_dir": self.data_dir,
+                "active_services": self.active_services,
+            }
             if count == 1:
-                self.service_specs[name]["objects"] = [service()]
+                self.service_specs[name]["objects"] = [service(**kwargs)]  # type: ignore[arg-type]
             elif count > 1:
                 self.service_specs[name]["objects"] = [
-                    service(name=f"{name}_{i}") for i in range(count)
+                    service(name=f"{name}_{i}", **kwargs)
+                    for i in range(count)  # type: ignore[arg-type]
                 ]
-        if postgres_spec := self.service_specs.get("postgres"):
+        self._wire_services()
+        self.secrets = [
+            SECRETS[secret_name]
+            for secret_name in stack_def.get("secrets", [])
+            if secret_name in SECRETS
+        ]
+
+    def _wire_services(self):
+        if (postgres_spec := self.service_specs.get("postgres")) and (
+            paddles_spec := self.service_specs.get("paddles")
+        ):
             postgres_obj = postgres_spec["objects"][0]
-            paddles_obj = self.service_specs["paddles"]["objects"][0]
+            paddles_obj = paddles_spec["objects"][0]
             paddles_obj.env_vars["PADDLES_SQLALCHEMY_URL"] = (
                 postgres_obj.paddles_sqla_url
             )
+
+        # No wiring needed for ceph_builder/ceph_node - they're independent stacks
 
     async def check_requirements(self):
         result = True
 
         result = has_sudo = await HasSudo().evaluate()
-        result = result and await LoopControlDeviceExists().evaluate()
-        result = result and await LoopControlDeviceWriteable().evaluate()
+        if "testnode" in self.service_specs or "ceph_node" in self.service_specs:
+            result = result and await LoopControlDeviceExists().evaluate()
+            result = result and await LoopControlDeviceWriteable().evaluate()
+            result = result and await BlockPoolDiskGroup().evaluate()
+            result = result and await BlockPoolParentAccessible().evaluate()
 
         # Check for SELinux being enabled and Enforcing; then check for the
         # presence of our module. If necessary, inform the user and instruct
@@ -135,14 +199,24 @@ class CephDevStack:
         if has_sudo and await host.selinux_enforcing():
             result = result and await SELinuxModule().evaluate()
 
-        for name, obj in config["containers"].items():
-            if (repo := obj.get("repo")) and not host.path_exists(repo):
+        for name in self.service_specs:
+            obj = config["containers"][name]
+            if (repo := obj.get("repo")) and not host.path_exists(
+                os.path.expanduser(str(repo))
+            ):
                 result = False
                 logger.error(f"Repo for {name} not found at {repo}")
         return result
 
-    async def apply(self, action):
-        return await getattr(self, action)()
+    async def apply(self, action: str, **kwargs) -> int | None:
+        if action == "wait":
+            return await self.wait(**kwargs)
+        if action == "logs":
+            return await self.logs(**kwargs)
+        method = getattr(self, action, None)
+        if method is None:
+            raise AttributeError(f"Unknown action {action!r}")
+        return await method()
 
     async def pull(self):
         logger.info("Pulling images...")
@@ -155,48 +229,81 @@ class CephDevStack:
             await spec["objects"][0].build()
 
     async def create(self):
+        args = config.get("args", {})
+        if args.get("build"):
+            await self.build()
         logger.info("Creating containers...")
         await CephDevStackNetwork().create()
-        await SSHKeyPair().create()
-        containers = []
+        for secret in self.secrets:
+            await secret().create()
+        # Pre-allocate loop device numbers sequentially so concurrent creates
+        # don't race on the same device numbers.
+        for spec in self.service_specs.values():
+            for obj in spec["objects"]:
+                if isinstance(obj, LoopDeviceMixin):
+                    _ = obj.devices
+        tasks = []
         for spec in self.service_specs.values():
             for object in spec["objects"]:
-                containers.append(object.create())
-        await asyncio.gather(*containers)
+                tasks.append(object.create())
+        await asyncio.gather(*tasks)
+
+    async def _run_depends(self):
+        stack_def = config.get("stacks", {}).get(self.stack_name, {})
+        depends = stack_def.get("depends", [])
+        if not depends:
+            return
+        for dep_name in depends:
+            logger.info(f"Running dependency stack: {dep_name}")
+            dep = CephDevStack(stack_name=dep_name)
+            await dep.start()
 
     async def start(self):
+        await self._run_depends()
         await self.create()
         logger.info("Starting containers...")
         for spec in self.service_specs.values():
             for object in spec["objects"]:
                 await object.start()
-        logger.info(
-            "All containers are running. To monitor teuthology, try running: podman "
-            "logs -f teuthology"
-        )
-        hostname = host.hostname()
-        logger.info(f"View test results at http://{hostname}:8081/")
+        if "teuthology" in self.service_specs:
+            logger.info(
+                "All containers are running. To monitor teuthology, try running: "
+                "podman logs -f teuthology"
+            )
+        else:
+            logger.info("All containers are running.")
+        if "pulpito" in self.service_specs:
+            hostname = host.hostname()
+            logger.info(f"View test results at http://{hostname}:8081/")
+        if "ceph_node" in self.service_specs:
+            logger.info(
+                "Monitor the cluster with: podman exec ceph_node ceph "
+                f"-c {CONTAINER_CLUSTER_DIR}/ceph.conf -s"
+            )
+
+    async def _gather_action(self, action: str):
+        tasks = []
+        for spec in self.service_specs.values():
+            for obj in spec["objects"]:
+                tasks.append(getattr(obj, action)())
+        await asyncio.gather(*tasks)
 
     async def stop(self):
         logger.info("Stopping containers...")
-        containers = []
-        for spec in self.service_specs.values():
-            for object in spec["objects"]:
-                containers.append(object.stop())
-        await asyncio.gather(*containers)
+        await self._gather_action("stop")
 
     async def remove(self):
         logger.info("Removing containers...")
-        containers = []
-        for spec in self.service_specs.values():
-            for object in spec["objects"]:
-                containers.append(object.remove())
-        await asyncio.gather(*containers)
+        await self._gather_action("remove")
         await CephDevStackNetwork().remove()
-        await SSHKeyPair().remove()
+        for secret in self.secrets:
+            await secret().remove()
 
     async def watch(self):
-        logger.info("Watching containers; will replace any that are stopped")
+        logger.info(
+            "Entering watch mode: while waiting for teuthology to "
+            "exit, other containers will be replaced as they are stopped."
+        )
         containers = []
         for spec in self.service_specs.values():
             if not spec["count"] > 0:
@@ -232,7 +339,7 @@ class CephDevStack:
             logger.error("No log file found")
         else:
             if locate:
-                print(str(log_file).replace(str(pathlib.Path.home()), "~"))
+                print(str(log_file.resolve()))
             else:
                 buffer_size = 8 * 1024
                 with open(log_file) as f:
@@ -240,7 +347,7 @@ class CephDevStack:
                         print(chunk, end="")
 
     def get_log_file(self, run_name: str = "", job_id: str = "") -> pathlib.Path:
-        archive_dir = Teuthology().archive_dir
+        archive_dir = self.data_dir / "archive"
 
         if not run_name:
             runs = get_runs(archive_dir)
