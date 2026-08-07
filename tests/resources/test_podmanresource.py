@@ -1,10 +1,10 @@
+import logging
 import pytest
 
-from pathlib import Path
 from subprocess import CalledProcessError
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
-
+from ceph_devstack.exec import Subprocess
 from ceph_devstack.resources import PodmanResource
 
 
@@ -51,10 +51,45 @@ class TestPodmanResource:
         with patch("ceph_devstack.host.host.arun") as m_arun:
             obj = cls()
             await obj.cmd(["0"])
-            print(m_arun.await_args_list)
-            m_arun.assert_awaited_once_with(["0"], cwd=Path("."), stream_output=False)
+            m_arun.assert_awaited_once_with(
+                ["0"], cwd=".", env=None, stream_output=False
+            )
 
-    async def test_cmd_failed(self, cls):
-        obj = cls()
-        with pytest.raises(CalledProcessError):
-            await obj.cmd(["false"], check=True)
+    async def test_cmd_passes_cwd_and_env(self, cls):
+        with patch("ceph_devstack.host.host.arun") as m_arun:
+            obj = cls()
+            await obj.cmd(
+                ["make"],
+                cwd="/tmp/build",
+                env={"FOO": "bar"},
+                stream_output=True,
+            )
+            m_arun.assert_awaited_once_with(
+                ["make"],
+                cwd="/tmp/build",
+                env={"FOO": "bar"},
+                stream_output=True,
+            )
+
+    async def test_cmd_failed(self, cls, caplog):
+        class FakeProc:
+            returncode = 1
+            collect_output = Subprocess.collect_output
+            log_failure = Subprocess.log_failure
+
+            def __init__(self):
+                self.stdout = AsyncMock()
+                self.stdout.read = AsyncMock(return_value=b"")
+                self.stderr = AsyncMock()
+                self.stderr.read = AsyncMock(return_value=b"podman-failure\n")
+
+            async def wait(self):
+                return 1
+
+        with patch("ceph_devstack.host.host.arun", return_value=FakeProc()) as m_arun:
+            obj = cls()
+            with caplog.at_level(logging.ERROR), pytest.raises(CalledProcessError):
+                await obj.cmd(["podman", "fail"], check=True)
+            m_arun.assert_awaited_once()
+        assert "Command failed (1)" in caplog.text
+        assert "podman-failure" in caplog.text

@@ -1,11 +1,30 @@
 import asyncio
 import os
 import sys
+from pathlib import Path
 
 import pytest
 
 from ceph_devstack.exec import Command
 from ceph_devstack.host import RemoteHost
+
+
+def test_command_resolves_cwd():
+    cmd = Command(["echo"], cwd="/tmp/foo")
+    assert cmd.kwargs["cwd"] == Path("/tmp/foo").absolute()
+
+
+def test_command_expands_tilde_in_cwd(monkeypatch, tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    cmd = Command(["echo"], cwd="~/bar")
+    assert cmd.kwargs["cwd"] == (home / "bar").absolute()
+
+
+def test_command_no_cwd_omits_key():
+    cmd = Command(["echo"])
+    assert "cwd" not in cmd.kwargs
 
 
 def test_remote_host_uses_tty_for_streaming():

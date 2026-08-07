@@ -15,6 +15,7 @@ logger = logging.getLogger("ceph-devstack")
 
 PROJECT_ROOT = Path(__file__).parent
 DEFAULT_CONFIG_PATH = Path("~/.config/ceph-devstack/config.toml")
+DEFAULT_CEPH_IMAGE = "quay.ceph.io/ceph-ci/ceph:main"
 
 
 def parse_args(args: List[str]) -> argparse.Namespace:

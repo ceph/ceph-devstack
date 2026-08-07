@@ -20,7 +20,7 @@ class Host:
     def cmd(
         self,
         args: List[str],
-        cwd: Optional[pathlib.Path] = None,
+        cwd: Optional[Union[str, pathlib.Path]] = None,
         env: Optional[Dict] = None,
         stream_output: bool = False,
     ) -> Command:
@@ -34,7 +34,7 @@ class Host:
     def run(
         self,
         args: List[str],
-        cwd: Optional[pathlib.Path] = None,
+        cwd: Optional[Union[str, pathlib.Path]] = None,
         env: Optional[Dict] = None,
     ):
         return self.cmd(args, cwd=cwd, env=env).run()
@@ -42,7 +42,7 @@ class Host:
     async def arun(
         self,
         args: List[str],
-        cwd: Optional[pathlib.Path] = None,
+        cwd: Optional[Union[str, pathlib.Path]] = None,
         env: Optional[Dict] = None,
         stream_output: bool = False,
     ) -> Subprocess:
@@ -54,6 +54,11 @@ class Host:
         if isinstance(path, str):
             path = pathlib.Path(path)
         return path.expanduser().exists()
+
+    def ismount(self, path: Union[str, pathlib.Path]) -> bool:
+        if isinstance(path, str):
+            path = pathlib.Path(path)
+        return os.path.ismount(path.expanduser())
 
     def hostname(self) -> str:
         name = socket.getfqdn()
@@ -155,7 +160,7 @@ class RemoteHost(Host):
     def cmd(
         self,
         args: List[str],
-        cwd: Optional[pathlib.Path] = None,
+        cwd: Optional[Union[str, pathlib.Path]] = None,
         env: Optional[Dict] = None,
         stream_output: bool = False,
     ):
@@ -166,6 +171,11 @@ class RemoteHost(Host):
     def path_exists(self, path: Union[str, pathlib.Path]):
         path = os.path.expanduser(path)
         proc = host.run(["ls", path])
+        return proc.returncode == 0
+
+    def ismount(self, path: Union[str, pathlib.Path]) -> bool:
+        path = os.path.expanduser(path)
+        proc = self.run(["mountpoint", "-q", str(path)])
         return proc.returncode == 0
 
     def hostname(self) -> str:

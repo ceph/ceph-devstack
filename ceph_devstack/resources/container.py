@@ -2,10 +2,13 @@ import asyncio
 import json
 import os
 
+from pathlib import Path
 from typing import Dict, List, Optional
 
-from ceph_devstack import config, logger
-from ceph_devstack.resources import PodmanResource
+from typing import Type
+
+from ceph_devstack import logger
+from ceph_devstack.resources import PodmanResource, StackResource
 
 
 class Container(PodmanResource):
@@ -29,8 +32,14 @@ class Container(PodmanResource):
     env_vars: Dict[str, Optional[str]] = {}
     _image_name: str | None = None
 
-    def __init__(self, name: str = ""):
-        super().__init__(name)
+    def __init__(
+        self,
+        name: str = "",
+        *,
+        data_dir: Optional[Path] = None,
+        active_services: Optional[List[str]] = None,
+    ):
+        super().__init__(name, data_dir=data_dir, active_services=active_services)
         self.env_vars = {**self.__class__.env_vars}
         for key in self.env_vars:
             if os.environ.get(key):
@@ -46,10 +55,6 @@ class Container(PodmanResource):
         return args
 
     @property
-    def config(self):
-        return config["containers"].get(self.__class__.__name__.lower(), {})
-
-    @property
     def image_name(self) -> str:
         if self._image_name is not None:
             return self._image_name
@@ -59,7 +64,7 @@ class Container(PodmanResource):
     def image(self):
         if self.repo:
             return f"localhost/{self.image_name}"
-        return self.config["image"]
+        return self.config.get("image", "")
 
     @property
     def image_tag(self):
@@ -70,14 +75,26 @@ class Container(PodmanResource):
     @property
     def repo(self):
         repo = self.config.get("repo", "")
-        try:
-            return repo.expanduser()
-        except AttributeError:
-            return os.path.expanduser(repo)
+        if not repo:
+            return ""
+        return Path(repo)
+
+    @property
+    def build_dir(self):
+        build_dir = self.config.get("build_dir", "")
+        if not build_dir:
+            return ""
+        return Path(build_dir)
 
     @property
     def cwd(self):
+        if self.build_dir:
+            return self.build_dir
         return self.repo or "."
+
+    @property
+    def should_build(self):
+        return self.config_bool("build_image")
 
     async def pull(self):
         if not getattr(self, "pull_cmd", None):
@@ -92,9 +109,9 @@ class Container(PodmanResource):
         )
 
     async def build(self):
-        if not getattr(self, "repo", None):
+        if not self.should_build:
             return
-        logger.debug(f"{self.name}: building from repo: {self.repo}")
+        logger.debug(f"{self.name}: building from {self.cwd}")
         await self.cmd(
             self.format_cmd(self.build_cmd),
             check=True,
@@ -169,3 +186,6 @@ class Container(PodmanResource):
             logger.error(f"Could not wait for {self.name}: {err.decode().strip()}")
             return proc.returncode
         return int(out.decode().strip())
+
+
+_: Type[StackResource] = Container

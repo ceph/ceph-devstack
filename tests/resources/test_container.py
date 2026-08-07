@@ -34,7 +34,7 @@ class TestContainerResource(_TestPodmanResource, _TestContainerBase):
 
     async def test_action_calls_cmd_with_correct_args(self, cls, action):
         if action == "build":
-            config["containers"][cls.__name__.lower()]["repo"] = "/repo_path"
+            config["containers"][cls.__name__.lower()]["build_image"] = True
         obj = cls()
         with patch.object(obj, "cmd") as mock_cmd:
             mock_proc = AsyncMock()
@@ -61,19 +61,27 @@ class TestContainerResource(_TestPodmanResource, _TestContainerBase):
         if action == "remove":
             pytest.skip("remove action doesn't stream output")
         if action == "build":
-            config["containers"][cls.__name__.lower()]["repo"] = "/repo_path"
+            config["containers"][cls.__name__.lower()]["build_image"] = True
         with patch.object(cls, "cmd") as mock_cmd:
             obj = cls()
             await getattr(obj, action)()
             _, kwargs = mock_cmd.call_args
             assert kwargs.get("stream_output") is True
 
-    async def test_build_action_skips_when_no_repo(self, cls):
-        config["containers"][cls.__name__.lower()]["repo"] = ""
+    async def test_build_action_skips_when_build_image_not_set(self, cls):
         obj = cls()
         with patch.object(obj, "cmd") as mock_cmd:
             await obj.build()
             mock_cmd.assert_not_called()
+
+    async def test_should_build_defaults_to_false(self, cls):
+        obj = cls()
+        assert obj.should_build is False
+
+    async def test_should_build_true_when_build_image_set(self, cls):
+        config["containers"][cls.__name__.lower()]["build_image"] = True
+        obj = cls()
+        assert obj.should_build is True
 
     async def test_pull_action_skips_localhost_images(self, cls):
         config["containers"]["container"]["image"] = "localhost/image:latest"

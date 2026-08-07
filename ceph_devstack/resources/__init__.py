@@ -6,10 +6,39 @@ import subprocess
 
 from pathlib import Path
 from subprocess import CalledProcessError
-from typing import List, Dict, Set
+from typing import List, Dict, Optional, Protocol, Set, Union, runtime_checkable
 
+from ceph_devstack import config
 from ceph_devstack.exec import Subprocess
 from ceph_devstack.host import host, local_host
+
+
+@runtime_checkable
+class StackResource(Protocol):
+    """Interface that CephDevStack expects from every service it manages."""
+
+    def __init__(self, name: str = "", **kwargs: object) -> None: ...
+
+    @property
+    def name(self) -> str: ...
+
+    async def pull(self) -> None: ...
+
+    async def build(self) -> None: ...
+
+    async def create(self) -> None: ...
+
+    async def start(self) -> None: ...
+
+    async def stop(self) -> None: ...
+
+    async def remove(self) -> None: ...
+
+    async def exists(self) -> bool: ...
+
+    async def is_running(self) -> bool: ...
+
+    async def wait(self) -> int | None: ...
 
 
 class DevStack:
@@ -40,9 +69,22 @@ class PodmanResource:
     log: Dict[str, Set[str]] = {}
     _name: str | None = None
 
-    def __init__(self, name: str = ""):
+    def __init__(
+        self,
+        name: str = "",
+        *,
+        data_dir: Optional[Path] = None,
+        active_services: Optional[List[str]] = None,
+    ):
         if name:
             self._name = name
+        self.data_dir: Path = (
+            data_dir
+            or Path(config.get("data_dir", "~/.local/share/ceph-devstack"))
+            .expanduser()
+            .absolute()
+        )
+        self.active_services: List[str] = active_services or []
 
     @property
     def name(self) -> str:
@@ -50,24 +92,46 @@ class PodmanResource:
             return self._name
         return self.__class__.__name__.lower()
 
+    @property
+    def config_key(self) -> str:
+        return self.__class__.__name__.lower()
+
+    @property
+    def config(self):
+        return config["containers"].get(self.config_key, {})
+
+    def config_bool(self, key: str, default: bool = False) -> bool:
+        """Read a boolean config value, normalizing strings and TOML bools."""
+        val = self.config.get(key, default)
+        if isinstance(val, str):
+            return val.lower() in ("true", "1", "yes")
+        return bool(val)
+
     async def cmd(
         self,
         args: List[str],
         check: bool = False,
         force_local: bool = False,
         stream_output: bool = False,
+        cwd: Optional[Union[str, Path]] = None,
+        env: Optional[Dict[str, str]] = None,
     ) -> Subprocess:
         exec_host = local_host if force_local else host
         proc = await exec_host.arun(
             args,
-            cwd=Path(self.cwd),
+            cwd=cwd if cwd is not None else self.cwd,
+            env=env,
             stream_output=stream_output,
         )
         returncode = await proc.wait()
         if check and returncode != 0:
-            # out = await proc.stderr.read()
-            # logger.error(out.decode())
-            raise CalledProcessError(cmd=args, returncode=returncode)
+            stdout, stderr = await proc.log_failure(args)
+            raise CalledProcessError(
+                returncode,
+                args,
+                output=stdout or None,
+                stderr=stderr or None,
+            )
         return proc
 
     def format_cmd(self, args: List):
@@ -76,7 +140,8 @@ class PodmanResource:
             v = getattr(self, k, None)
             if v is not None:
                 if isinstance(v, Path):
-                    v = v.expanduser()
+                    # Stringify only when interpolating into argv templates.
+                    v = os.fspath(v.expanduser().absolute())
                 vars[k] = v
         return [s.format(**vars) for s in args]
 
