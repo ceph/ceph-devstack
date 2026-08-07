@@ -28,6 +28,7 @@ services = [
     "registry",
 ]
 secrets = ["ssh_keypair"]
+local_artifacts = false
 
 [stacks.build-ceph]
 services = ["ceph_builder"]

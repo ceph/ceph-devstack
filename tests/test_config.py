@@ -110,6 +110,7 @@ class TestConfigDefaults:
                         "registry",
                     ],
                     "secrets": ["ssh_keypair"],
+                    "local_artifacts": False,
                 },
                 "ceph": {
                     "services": ["ceph_node"],

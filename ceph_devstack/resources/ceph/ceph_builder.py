@@ -618,16 +618,17 @@ class CephBuilder(CephBuildConfigMixin, PodmanResource):
         elif self.image_builder == "binary-patch":
             await self._build_cpatch_image()
 
-    def _runtime_image_name(self) -> str:
-        """Local image tag produced after package-build container/build.sh."""
-        return runtime_image_tag(self.target_image)
+    @property
+    def runtime_image_name(self) -> str:
+        """Local image tag produced by the build-ceph stack."""
+        return runtime_image_tag(self.target_image, image_builder=self.image_builder)
 
     async def _build_runtime_image(self, ceph_version: str | None = None):
         """Build a Ceph runtime image from locally built RPMs via container/build.sh."""
         assert self.repo is not None
         packages_dir = find_rpm_packages_dir(self.repo, self.build_subdir)
 
-        image_tag = self._runtime_image_name()
+        image_tag = self.runtime_image_name
         branch = None
         sha1 = None
         try:

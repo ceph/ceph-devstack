@@ -13,6 +13,8 @@ from ceph_devstack.host import host
 from ceph_devstack.resources import StackResource
 from ceph_devstack.resources.misc import Secret, Network
 from ceph_devstack.resources.ceph.containers import (
+    CONTAINER_CEPH_REPO_PATH,
+    CONTAINER_CEPH_REPO_URL,
     Postgres,
     Beanstalk,
     Paddles,
@@ -26,6 +28,7 @@ from ceph_devstack.resources.ceph.containers import (
 from ceph_devstack.resources.ceph.ceph_builder import CephBuilder
 from ceph_devstack.resources.ceph.ceph_node import CephNode, CONTAINER_CLUSTER_DIR
 from ceph_devstack.resources.ceph.host_loops import LoopDeviceMixin
+from ceph_devstack.resources.utils import builder_repo_path
 from ceph_devstack.resources.ceph.requirements import (
     HasSudo,
     LoopControlDeviceExists,
@@ -129,6 +132,7 @@ class CephDevStack:
         self.stack_name = stack_name
         stack_def = stacks[stack_name]
         self.active_services = list(stack_def.get("services", []))
+        self.local_artifacts = bool(stack_def.get("local_artifacts", False))
         base_dir = config.get("data_dir", "~/.local/share/ceph-devstack")
         self.data_dir = (pathlib.Path(base_dir) / stack_name).expanduser().absolute()
 
@@ -156,6 +160,7 @@ class CephDevStack:
             kwargs: dict[str, object] = {
                 "data_dir": self.data_dir,
                 "active_services": self.active_services,
+                "local_artifacts": self.local_artifacts,
             }
             if count == 1:
                 self.service_specs[name]["objects"] = [service(**kwargs)]  # type: ignore[arg-type]
@@ -171,6 +176,51 @@ class CephDevStack:
             if secret_name in SECRETS
         ]
 
+    def _wire_repo_mount(self, teuth_obj: Teuthology):
+        """Set up suite discovery from the mounted local ceph repo.
+
+        Adds --suite-dir so teuthology reads suite YAML from the mounted
+        checkout instead of cloning from a remote.  Does NOT inject sha1,
+        validate-sha1, or point TEUTHOLOGY_CEPH_REPO at the local path.
+        """
+        extra = teuth_obj.env_vars.get("TEUTHOLOGY_SUITE_EXTRA_ARGS") or ""
+        flags = []
+        if "--suite-dir" not in extra:
+            flags.append(f"--suite-dir {CONTAINER_CEPH_REPO_PATH}")
+        if flags:
+            teuth_obj.env_vars["TEUTHOLOGY_SUITE_EXTRA_ARGS"] = (
+                f"{extra} {' '.join(flags)}".strip()
+            )
+
+    def _wire_local_artifacts(self, teuth_obj: Teuthology):
+        """Configure teuthology to use locally-built artifacts.
+
+        Points teuthology at the local repo's commit, disables shaman
+        validation, and overrides ceph repo URLs.  Only call when the
+        stack has local_artifacts enabled.
+        """
+        from ceph_devstack.resources.utils import git_sha1
+
+        repo_path = builder_repo_path()
+        sha1 = git_sha1(repo_path) if repo_path else None
+        extra = teuth_obj.env_vars.get("TEUTHOLOGY_SUITE_EXTRA_ARGS") or ""
+        flags = []
+        if "--validate-sha1" not in extra:
+            flags.append("--validate-sha1 false")
+        if sha1:
+            if "--sha1" not in extra:
+                flags.append(f"--sha1 {sha1}")
+            if "--suite-sha1" not in extra:
+                flags.append(f"--suite-sha1 {sha1}")
+        if flags:
+            teuth_obj.env_vars["TEUTHOLOGY_SUITE_EXTRA_ARGS"] = (
+                f"{extra} {' '.join(flags)}".strip()
+            )
+        if not teuth_obj.env_vars.get("TEUTHOLOGY_CEPH_REPO"):
+            teuth_obj.env_vars["TEUTHOLOGY_CEPH_REPO"] = CONTAINER_CEPH_REPO_URL
+        if not teuth_obj.env_vars.get("TEUTHOLOGY_SUITE_REPO"):
+            teuth_obj.env_vars["TEUTHOLOGY_SUITE_REPO"] = CONTAINER_CEPH_REPO_URL
+
     def _wire_services(self):
         if (postgres_spec := self.service_specs.get("postgres")) and (
             paddles_spec := self.service_specs.get("paddles")
@@ -181,7 +231,11 @@ class CephDevStack:
                 postgres_obj.paddles_sqla_url
             )
 
-        # No wiring needed for ceph_builder/ceph_node - they're independent stacks
+        if builder_repo_path() and (teuth_spec := self.service_specs.get("teuthology")):
+            teuth_obj = teuth_spec["objects"][0]
+            self._wire_repo_mount(teuth_obj)
+            if self.local_artifacts:
+                self._wire_local_artifacts(teuth_obj)
 
     async def check_requirements(self):
         result = True
@@ -236,12 +290,16 @@ class CephDevStack:
         await CephDevStackNetwork().create()
         for secret in self.secrets:
             await secret().create()
-        # Pre-allocate loop device numbers sequentially so concurrent creates
-        # don't race on the same device numbers.
+        # Sequential pre-create steps before the parallel phase:
+        # 1. Allocate loop device numbers so concurrent creates don't race.
+        # 2. Generate teuthology config (uses podman run to extract the
+        #    image's built-in config, which conflicts with concurrent ops).
         for spec in self.service_specs.values():
             for obj in spec["objects"]:
                 if isinstance(obj, LoopDeviceMixin):
                     _ = obj.devices
+                if isinstance(obj, Teuthology):
+                    await obj._generate_teuthology_yaml()
         tasks = []
         for spec in self.service_specs.values():
             for object in spec["objects"]:
@@ -258,6 +316,19 @@ class CephDevStack:
             dep = CephDevStack(stack_name=dep_name)
             await dep.start()
 
+    async def _push_to_registry(self):
+        """Push the locally-built Ceph runtime image to the local registry."""
+        if "registry" not in self.service_specs:
+            return
+        builder = CephBuilder()
+        if not builder.repo:
+            return
+        await builder._resolve_build_distro()
+        registry = self.service_specs["registry"]["objects"][0]
+        local_image = builder.runtime_image_name
+        logger.info(f"Pushing {local_image} to local registry...")
+        await registry.push_image(local_image, distro=builder.distro)
+
     async def start(self):
         await self._run_depends()
         await self.create()
@@ -265,6 +336,7 @@ class CephDevStack:
         for spec in self.service_specs.values():
             for object in spec["objects"]:
                 await object.start()
+        await self._push_to_registry()
         if "teuthology" in self.service_specs:
             logger.info(
                 "All containers are running. To monitor teuthology, try running: "

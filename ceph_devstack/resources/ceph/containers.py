@@ -12,9 +12,13 @@ from ceph_devstack.host import host
 from ceph_devstack.resources.ceph.ceph_node import BASE_CAPABILITIES
 from ceph_devstack.resources.ceph.host_loops import LoopDeviceMixin
 from ceph_devstack.resources.container import Container
+from ceph_devstack.resources.utils import builder_image_tags, builder_repo_path
 
 
 ARCHIVE_MOUNT_SUFFIX = "" if sys.platform == "darwin" else ":z"
+
+CONTAINER_CEPH_REPO_PATH = "/ceph_repo"
+CONTAINER_CEPH_REPO_URL = f"file://{CONTAINER_CEPH_REPO_PATH}"
 
 REGISTRY_CONF_CONTENT = """\
 [[registry]]
@@ -34,9 +38,8 @@ LOCAL_ARTIFACT_DEFAULTS = {
             ],
         },
         "cephadm": {
-            "containers": {
-                "image": "registry:5000/ceph",
-            },
+            "cephadm_from_container": True,
+            "containers": {},
         },
     },
 }
@@ -318,13 +321,14 @@ class PackageRepo(Container):
         explicit = self.config.get("packages_dir", "")
         if explicit:
             return Path(explicit).expanduser().absolute()
-        builder_cfg = config.get("containers", {}).get("ceph_builder", {})
-        repo = builder_cfg.get("repo", "")
-        if repo:
-            build_subdir = builder_cfg.get("build_dir", "build")
-            return (
-                Path(repo).expanduser().absolute() / build_subdir / "rpmbuild" / "RPMS"
+        repo_path = builder_repo_path()
+        if repo_path:
+            build_subdir = (
+                config.get("containers", {})
+                .get("ceph_builder", {})
+                .get("build_dir", "build")
             )
+            return repo_path / build_subdir / "rpmbuild" / "RPMS"
         return (
             Path(config.get("data_dir", "~/.local/share/ceph-devstack"))
             .expanduser()
@@ -380,6 +384,16 @@ class Registry(Container):
             "-i",
             "--network",
             "ceph-devstack",
+            "-p",
+            "5000:5000",
+            "--health-cmd",
+            "CMD wget -q --spider http://localhost:5000/v2/",
+            "--health-interval",
+            "5s",
+            "--health-retries",
+            "3",
+            "--health-timeout",
+            "3s",
             "-v",
             f"{registry_dir}:/var/lib/registry" + ARCHIVE_MOUNT_SUFFIX,
             "--name",
@@ -391,8 +405,15 @@ class Registry(Container):
         self.registry_dir.mkdir(parents=True, exist_ok=True)
         await super().create()
 
-    async def push_image(self, local_image: str, registry_tag: str = ""):
-        """Tag and push a local image to this registry."""
+    async def push_image(
+        self, local_image: str, registry_tag: str = "", distro: str | None = None
+    ):
+        """Tag and push a local image to this registry.
+
+        Pushes with the CI-pattern tags (full, branch, sha1) when the
+        ceph_builder repo is configured, so cephadm can locate images
+        by commit hash.
+        """
         if not registry_tag:
             tag = local_image.rsplit(":", 1)[-1] if ":" in local_image else "latest"
             registry_tag = f"localhost:5000/ceph:{tag}"
@@ -405,6 +426,17 @@ class Registry(Container):
             check=True,
             stream_output=True,
         )
+        tags = builder_image_tags(distro=distro)
+        if tags:
+            for tag_name, tag_value in tags.items():
+                full_ref = f"localhost:5000/ceph:{tag_value}"
+                logger.info(f"Pushing {tag_name} tag: {full_ref}")
+                await self.cmd(["podman", "tag", local_image, full_ref], check=True)
+                await self.cmd(
+                    ["podman", "push", "--tls-verify=false", full_ref],
+                    check=True,
+                    stream_output=True,
+                )
 
 
 class Teuthology(Container):
@@ -469,13 +501,17 @@ class Teuthology(Container):
             teuthology_yaml = Path(teuthology_yaml).expanduser().absolute()
             cmd += [
                 "-v",
-                f"{teuthology_yaml}:/root/.teuthology.yaml",
+                f"{teuthology_yaml}:/root/.teuthology.yaml" + ARCHIVE_MOUNT_SUFFIX,
             ]
         elif self._generated_teuthology_yaml.exists():
             cmd += [
                 "-v",
-                f"{self._generated_teuthology_yaml}:/root/.teuthology.yaml",
+                f"{self._generated_teuthology_yaml}:/root/.teuthology.yaml"
+                + ARCHIVE_MOUNT_SUFFIX,
             ]
+        repo_path = builder_repo_path()
+        if repo_path:
+            cmd += ["-v", f"{repo_path}:{CONTAINER_CEPH_REPO_PATH}:ro,z"]
         cmd += [
             "--name",
             "{name}",
@@ -508,35 +544,70 @@ class Teuthology(Container):
     async def _extract_builtin_yaml(self) -> dict:
         """Extract the .teuthology.yaml shipped inside the container image."""
         proc = await self.cmd(
-            ["podman", "run", "--rm", self.image, "cat", "/root/.teuthology.yaml"],
+            [
+                "podman",
+                "run",
+                "--rm",
+                "--entrypoint",
+                "/bin/bash",
+                self.image,
+                "-c",
+                "cat /root/.teuthology.yaml",
+            ],
             check=False,
         )
-        stdout = b""
-        if proc.stdout:
-            stdout = await proc.stdout.read()
-        rc = await proc.wait()
-        if rc != 0:
+        stdout, _ = await proc.collect_output()
+        if proc.returncode != 0:
             logger.warning(
-                f"Could not extract .teuthology.yaml from {self.image} (rc={rc}); "
-                "using empty base config"
+                f"Could not extract .teuthology.yaml from {self.image} "
+                f"(rc={proc.returncode})"
             )
             return {}
-        return yaml.safe_load(stdout.decode()) or {}
+        return yaml.safe_load(stdout) or {}
 
     async def _generate_teuthology_yaml(self):
-        """Deep-merge local artifact defaults into the image's built-in config."""
-        if not (
+        """Extract the image's built-in config and deep-merge local artifact defaults."""
+        base_config = await self._extract_builtin_yaml()
+        path = self._generated_teuthology_yaml
+        if not base_config:
+            logger.warning(
+                "Skipping teuthology config generation; the container's "
+                "built-in config will be used without local artifact settings"
+            )
+            path.unlink(missing_ok=True)
+            return
+        if self.local_artifacts and (
             "registry" in self.active_services or "package_repo" in self.active_services
         ):
-            return
-        path = self._generated_teuthology_yaml
+            overrides = copy.deepcopy(LOCAL_ARTIFACT_DEFAULTS)
+            tags = builder_image_tags()
+            if tags:
+                if "sha1" in tags:
+                    overrides["defaults"]["cephadm"]["containers"] = {
+                        "image": f"registry:5000/ceph:{tags['sha1']}"
+                    }
+                else:
+                    overrides["defaults"].pop("cephadm", None)
+                base_config["ceph_git_url"] = CONTAINER_CEPH_REPO_URL
+                base_config["ceph_qa_suite_git_url"] = CONTAINER_CEPH_REPO_URL
+            else:
+                logger.warning(
+                    "No ceph_builder repo configured; local registry image "
+                    "reference will not be set in teuthology config"
+                )
+                overrides["defaults"].pop("cephadm", None)
+            base_config = deep_merge(base_config, overrides)
+            base_config["suite_verify_ceph_hash"] = False
+        elif builder_repo_path():
+            base_config["ceph_git_url"] = CONTAINER_CEPH_REPO_URL
+            base_config["ceph_qa_suite_git_url"] = CONTAINER_CEPH_REPO_URL
         path.parent.mkdir(parents=True, exist_ok=True)
-        base_config = await self._extract_builtin_yaml()
-        merged = deep_merge(base_config, LOCAL_ARTIFACT_DEFAULTS)
-        path.write_text(yaml.dump(merged, default_flow_style=False), encoding="utf-8")
-        logger.debug(f"Wrote merged teuthology config to {path}")
+        path.write_text(
+            yaml.dump(base_config, default_flow_style=False), encoding="utf-8"
+        )
 
     async def create(self):
         self.archive_dir.mkdir(parents=True, exist_ok=True)
-        await self._generate_teuthology_yaml()
+        if not self._generated_teuthology_yaml.exists():
+            await self._generate_teuthology_yaml()
         await super().create()

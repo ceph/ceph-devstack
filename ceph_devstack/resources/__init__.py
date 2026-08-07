@@ -75,6 +75,7 @@ class PodmanResource:
         *,
         data_dir: Optional[Path] = None,
         active_services: Optional[List[str]] = None,
+        local_artifacts: bool = False,
     ):
         if name:
             self._name = name
@@ -85,6 +86,7 @@ class PodmanResource:
             .absolute()
         )
         self.active_services: List[str] = active_services or []
+        self.local_artifacts: bool = local_artifacts
 
     @property
     def name(self) -> str:

@@ -38,8 +38,14 @@ class Container(PodmanResource):
         *,
         data_dir: Optional[Path] = None,
         active_services: Optional[List[str]] = None,
+        local_artifacts: bool = False,
     ):
-        super().__init__(name, data_dir=data_dir, active_services=active_services)
+        super().__init__(
+            name,
+            data_dir=data_dir,
+            active_services=active_services,
+            local_artifacts=local_artifacts,
+        )
         self.env_vars = {**self.__class__.env_vars}
         for key in self.env_vars:
             if os.environ.get(key):

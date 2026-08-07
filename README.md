@@ -189,6 +189,118 @@ Then `ceph-devstack --stack ceph start` will automatically run the
 before deploying the cluster. `stop` and `remove` do not cascade into
 dependency stacks, so build caches are preserved.
 
+### Testing local Ceph builds with teuthology
+
+The teuthology stack includes two services that bridge locally-built artifacts
+into test jobs:
+
+- **package_repo** — an HTTP server exposing built RPMs at
+  `http://package_repo:8080/rpm/` on the `ceph-devstack` network
+- **registry** — an OCI distribution registry at `registry:5000` for
+  locally-built container images
+
+Both are included in `stacks.teuthology.services` by default. When present
+and `local_artifacts = true` is set on the stack, ceph-devstack:
+
+1. Mounts the RPM output directory from `build-ceph` into `package_repo`
+2. Configures testnodes to trust `registry:5000` as an insecure registry
+3. Deep-merges local artifact settings into teuthology's `.teuthology.yaml`
+   so that `install` tasks pull packages from the local repo and `cephadm`
+   tasks pull images from the local registry
+
+#### Quick start
+
+First, configure `build-ceph` to compile from your local checkout
+(`~/.config/ceph-devstack/config.toml`):
+
+```toml
+[containers.ceph_builder]
+repo = "~/src/ceph"
+image_builder = "package-build"
+build_distro = "centos9"
+
+[stacks.teuthology]
+depends = ["build-ceph"]
+local_artifacts = true
+```
+
+Then start the teuthology stack. The `depends` declaration causes `build-ceph`
+to run first, compiling packages and producing a container image:
+
+```bash
+ceph-devstack --stack teuthology start
+```
+
+After the build completes, `package_repo` immediately begins serving the RPMs.
+To also make the built container image available, push it into the registry:
+
+```bash
+podman tag localhost/ceph-devstack:main localhost:5000/ceph:main
+podman push --tls-verify=false localhost:5000/ceph:main
+```
+
+Now schedule a test suite that exercises local artifacts:
+
+```bash
+export TEUTHOLOGY_SUITE=orch:cephadm:smoke-small
+ceph-devstack --stack teuthology start
+```
+
+#### Verifying the services
+
+Check that the package repo is serving RPMs:
+
+```bash
+podman exec package_repo ls /packages/rpm/
+```
+
+Check that the registry has your image:
+
+```bash
+podman exec registry wget -qO- http://localhost:5000/v2/_catalog
+```
+
+#### Without `depends`
+
+If you prefer to run stacks manually rather than using `depends`:
+
+```bash
+ceph-devstack --stack build-ceph start
+podman tag localhost/ceph-devstack:main localhost:5000/ceph:main
+podman push --tls-verify=false localhost:5000/ceph:main
+ceph-devstack --stack teuthology start
+```
+
+#### Disabling local artifact services
+
+If you don't need local artifacts (e.g. testing against upstream packages),
+the simplest approach is to set `local_artifacts = false` (the default):
+
+```toml
+[stacks.teuthology]
+local_artifacts = false
+```
+
+This prevents the `.teuthology.yaml` merge while keeping the services
+available for manual use. To also stop the containers from being created,
+remove `package_repo` and `registry` from your teuthology stack config:
+
+```toml
+[stacks.teuthology]
+services = [
+    "postgres",
+    "paddles",
+    "beanstalk",
+    "pulpito",
+    "teuthology",
+    "testnode",
+    "archive",
+]
+```
+
+When these services are absent, testnodes will not receive the insecure
+registry config and teuthology's config will not be modified.
+
 As an example, the following configuration will use a local image for paddles with the tag `TEST`; it will also create ten testnode containers; and will build its teuthology container from the git repo at `~/src/teuthology`:
 ```
 containers:
