@@ -1,17 +1,96 @@
 import os
 import pathlib
-import pytest
 import random
-
+from collections.abc import Callable
 from datetime import datetime, timedelta
+from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from ceph_devstack import config
+from ceph_devstack.block_pool import BlockPool
+from ceph_devstack.resources.ceph.host_loops import LoopDeviceMixin
 
 
 @pytest.fixture(autouse=True)
 def reset_config():
     config.load()
+    LoopDeviceMixin.reset_allocation()
     yield
+
+
+@pytest.fixture
+def mock_cmd() -> AsyncMock:
+    return AsyncMock()
+
+
+@pytest.fixture
+def file_backed_device_size():
+    """Use tmp-file size for block-pool parents; never consult real sysfs."""
+    with patch(
+        "ceph_devstack.block_pool.BlockPool._device_size_bytes",
+        side_effect=lambda parent: os.path.getsize(parent),
+    ):
+        yield
+
+
+@pytest.fixture
+def pool_parent(tmp_path: pathlib.Path) -> pathlib.Path:
+    parent = tmp_path / "nvme0n1p1"
+    parent.write_bytes(b"\x00" * (20 * 1024**2))
+    return parent
+
+
+@pytest.fixture
+def mock_fresh_enrollment(file_backed_device_size):
+    with (
+        patch("ceph_devstack.block_pool.BlockPool._device_mounted", return_value=False),
+        patch(
+            "ceph_devstack.block_pool.BlockPool._device_has_blkid_signature",
+            return_value=False,
+        ),
+    ):
+        yield
+
+
+@pytest.fixture
+def block_pool_factory(
+    tmp_path: pathlib.Path,
+    pool_parent: pathlib.Path,
+    file_backed_device_size,
+) -> Callable[..., BlockPool]:
+    def factory(*, enrolled: bool = False, allow_enroll: bool = True) -> BlockPool:
+        state_path = tmp_path / "block_pool.json"
+        with patch(
+            "ceph_devstack.block_pool.validate_parent_name",
+            return_value=str(pool_parent),
+        ):
+            pool = BlockPool(
+                state_path,
+                str(pool_parent),
+                allow_enroll=allow_enroll,
+            )
+        if enrolled:
+            pool._state["enrolled"] = True
+            pool._atomic_save()
+        return pool
+
+    return factory
+
+
+@pytest.fixture
+def block_pool(block_pool_factory: Callable[..., BlockPool]) -> BlockPool:
+    return block_pool_factory()
+
+
+@pytest.fixture
+def enrolled_pool(block_pool_factory: Callable[..., BlockPool]) -> BlockPool:
+    return block_pool_factory(enrolled=True)
+
+
+@pytest.fixture
+def disallow_enroll_pool(block_pool_factory: Callable[..., BlockPool]) -> BlockPool:
+    return block_pool_factory(allow_enroll=False)
 
 
 @pytest.fixture(scope="function")
