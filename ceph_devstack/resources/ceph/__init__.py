@@ -6,11 +6,12 @@ import tempfile
 
 from subprocess import CalledProcessError
 
-from typing import Type
+from typing import List, Type
 
 from ceph_devstack import config, logger
 from ceph_devstack.host import host
 from ceph_devstack.resources import StackResource
+from ceph_devstack.resources.container import Container
 from ceph_devstack.resources.misc import Secret, Network
 from ceph_devstack.resources.ceph.containers import (
     CONTAINER_CEPH_REPO_PATH,
@@ -376,7 +377,7 @@ class CephDevStack:
             "Entering watch mode: while waiting for teuthology to "
             "exit, other containers will be replaced as they are stopped."
         )
-        containers = []
+        containers: List[Container] = []
         for spec in self.service_specs.values():
             if not spec["count"] > 0:
                 continue
@@ -392,7 +393,10 @@ class CephDevStack:
                         )
                         await container.create()
                         await container.start()
-                    elif not await container.is_running():
+                    elif (
+                        not await container.is_running()
+                        and container.name != "teuthology"
+                    ):
                         logger.info(f"Container {container.name} stopped; restarting")
                         await container.start()
 
