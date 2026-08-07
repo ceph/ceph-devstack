@@ -71,18 +71,19 @@ def builder_repo_path() -> Path | None:
     return Path(repo).expanduser().resolve()
 
 
-def builder_image_tags() -> dict[str, str]:
+def builder_image_tags(distro: str | None = None) -> dict[str, str]:
     """Compute CI-pattern image tags from the ceph_builder repo's git state."""
     repo_path = builder_repo_path()
     if repo_path is None:
         return {}
-    from ceph_devstack import config
+    if distro is None:
+        from ceph_devstack import config
 
-    distro = (
-        config.get("containers", {})
-        .get("ceph_builder", {})
-        .get("build_distro", "centos9")
-    )
+        distro = (
+            config.get("containers", {})
+            .get("ceph_builder", {})
+            .get("build_distro", "centos9")
+        )
     return build_image_tags(
         branch=git_branch(repo_path),
         sha1=git_sha1(repo_path),
