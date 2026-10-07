@@ -231,7 +231,7 @@ class PodmanDNSPlugin(FixableRequirement):
 
 
 class FuseOverlayfsPresence(FixableRequirement):
-    check_cmd = ["command", "-v", "fuse-overlayfs"]
+    check_cmd = ["sh", "-c", "command -v fuse-overlayfs"]
     suggest_msg = "Could not find fuse-overlayfs"
     fix_cmd = ["sudo", "dnf", "install", "-y", "fuse-overlayfs"]
 
