@@ -218,19 +218,7 @@ class TestNode(Container):
             "/dev/fuse:/dev/fuse",
             "-v",
             "/dev/disk:/dev/disk",
-            # cephadm tries to access these DMI-related files, and by default they
-            # have 600 permissions on the host. It appears to be ok if they are
-            # empty, though.
-            # The below was bizarrely causing this error message:
-            # No such file or directory: OCI runtime attempted to invoke a command that was
-            # not found
-            # That was causing the container to fail to start up.
-            "-v",
-            "/dev/null:/sys/class/dmi/id/board_serial",
-            "-v",
-            "/dev/null:/sys/class/dmi/id/chassis_serial",
-            "-v",
-            "/dev/null:/sys/class/dmi/id/product_serial",
+            *self._get_available_dmi_mounts(),
             *self.additional_volumes,
             "--device",
             "/dev/net/tun",
@@ -328,6 +316,26 @@ class TestNode(Container):
 
     def device_image(self, device: str):
         return f"{self.name}-{device.removeprefix('/dev/loop')}"
+
+    def _get_available_dmi_mounts(self) -> List[str]:
+        """Return volume mount args for DMI files that exist on the host.
+
+        cephadm tries to access DMI-related files, and by default they have 600
+        permissions on the host. We mount /dev/null to make them accessible but empty.
+        However, in nested virtualization these files may not exist at all, so we
+        only mount them if they're present on the host.
+        """
+        dmi_files = [
+            "board_serial",
+            "chassis_serial",
+            "product_serial",
+        ]
+        mounts = []
+        for dmi_file in dmi_files:
+            dmi_path = f"/sys/class/dmi/id/{dmi_file}"
+            if host.path_exists(dmi_path):
+                mounts.extend(["-v", f"/dev/null:{dmi_path}"])
+        return mounts
 
 
 class Teuthology(Container):
