@@ -14,15 +14,15 @@ It is currently under active development and has not yet had a formal release.
 
 ## Supported Operating Systems
 
-☑︎ CentOS 9.Stream should work out of the box
+☑︎ RHEL 8+ and derivatives (CentOS Stream, AlmaLinux, Rocky Linux)
 
-☑︎ CentOS 8.Stream mostly works - but has not yet passed a Ceph test
+☑︎ Fedora 36+
 
-☐ A recent Fedora should work but has not been tested
+☑︎ Ubuntu 24.04+ - actively tested in CI
 
-☒ Ubuntu does not currently ship a new enough podman
+☑︎ Debian 12+ "Bookworm"
 
-☒ MacOS will require special effort to support since podman operations are done inside a VM
+☑︎ macOS - supported via the podman machine VM
 
 ## Requirements
 

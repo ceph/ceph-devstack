@@ -258,7 +258,7 @@ class TestFuseOverlayfsPresence:
         return requirements.FuseOverlayfsPresence
 
     def test_fuse_overlayfs_presence_check_cmd(self, req):
-        assert req.check_cmd == ["command", "-v", "fuse-overlayfs"]
+        assert req.check_cmd == ["sh", "-c", "command -v fuse-overlayfs"]
 
     def test_fuse_overlayfs_presence_fix_cmd(self, req):
         assert req.fix_cmd == ["sudo", "dnf", "install", "-y", "fuse-overlayfs"]
