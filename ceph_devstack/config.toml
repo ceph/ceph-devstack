@@ -1,5 +1,19 @@
 data_dir = "~/.local/share/ceph-devstack"
 
+[block_pool]
+# Dedicated empty block device or partition. Whole disks are allowed when
+# empty; disks with existing partitions must use a partition path instead.
+# Enrollment reads/writes the parent directly: your user must be able to
+# open the device for read/write (typically membership in the disk group).
+# First run requires allow_enroll = true; the tool writes a tail marker and
+# refuses non-empty or foreign devices. If block_pool.json is lost but the
+# marker remains, start again to reclaim the marker; the old allocations are
+# forgotten, so regions that still hold data are refused until wiped.
+# parent = "/dev/nvme0n1"
+# parent = "/dev/nvme0n1p1"
+# allow_enroll = true
+# state_dir = "/path"  # where block_pool.json lives; defaults to data_dir
+
 [containers.archive]
 image = "python:alpine"
 
