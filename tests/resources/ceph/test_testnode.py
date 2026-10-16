@@ -1,44 +1,48 @@
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
-from ceph_devstack.resources.ceph import TestNode as _TestNode
 from ceph_devstack import config
+from ceph_devstack.resources.ceph import TestNode as _TestNode
 
 
 class TestTestnode:
-    @pytest.fixture(scope="class")
-    @classmethod
-    def cls(self) -> type[_TestNode]:
-        return _TestNode
-
-    def test_testnode_loop_device_count_default_to_one(self, cls):
-        testnode = cls("testnode_1")
+    def test_testnode_loop_device_count_default_to_one(self):
+        testnode = _TestNode("testnode_1")
         assert testnode.loop_device_count == 1
 
-    def test_testnode_create_cmd_includes_related_devices(self, cls):
+    def test_testnode_create_cmd_includes_related_devices(self, tmp_path):
         config.load(Path(__file__).parent.joinpath("fixtures", "testnode-config.toml"))
-        testnode = cls("testnode_1")
+        config["data_dir"] = str(tmp_path)
+        testnode = _TestNode("testnode_1")
         create_cmd = testnode.create_cmd
-        assert "--device=/dev/loop4" in create_cmd
-        assert "--device=/dev/loop5" in create_cmd
-        assert "--device=/dev/loop6" in create_cmd
-        assert "--device=/dev/loop7" in create_cmd
+        assert "--device=/dev/loop0" in create_cmd
+        assert "--device=/dev/loop1" in create_cmd
+        assert "--device=/dev/loop2" in create_cmd
+        assert "--device=/dev/loop3" in create_cmd
 
-    def test_testnode_devices_is_based_on_loop_device_count_config(self, cls):
+    def test_testnode_devices_is_based_on_loop_device_count_config(self, tmp_path):
         config.load(Path(__file__).parent.joinpath("fixtures", "testnode-config.toml"))
-        testnode = cls("testnode_1")
+        config["data_dir"] = str(tmp_path)
+        testnode = _TestNode("testnode_1")
         assert testnode.loop_device_count == 4
         assert testnode.devices == [
-            "/dev/loop4",
-            "/dev/loop5",
-            "/dev/loop6",
-            "/dev/loop7",
+            "/dev/loop0",
+            "/dev/loop1",
+            "/dev/loop2",
+            "/dev/loop3",
         ]
 
-    def test_get_available_dmi_mounts_with_all_files_present(self, cls):
-        testnode = cls("testnode_1")
+    def test_testnode_reuses_existing_backing_files(self, tmp_path, fake_host):
+        config["data_dir"] = str(tmp_path)
+        image_dir = tmp_path / "disk_images"
+        fake_host.add_file(image_dir / "testnode_1-4")
+        fake_host.add_file(image_dir / "testnode_1-1")
+        config["containers"]["testnode"]["loop_device_count"] = 3
+        testnode = _TestNode("testnode_1")
+        assert testnode.devices == ["/dev/loop1", "/dev/loop4", "/dev/loop0"]
+
+    def test_get_available_dmi_mounts_with_all_files_present(self):
+        testnode = _TestNode("testnode_1")
         with patch(
             "ceph_devstack.resources.ceph.containers.host.path_exists"
         ) as mock_exists:
@@ -53,8 +57,8 @@ class TestTestnode:
                 "/dev/null:/sys/class/dmi/id/product_serial",
             ]
 
-    def test_get_available_dmi_mounts_with_no_files_present(self, cls):
-        testnode = cls("testnode_1")
+    def test_get_available_dmi_mounts_with_no_files_present(self):
+        testnode = _TestNode("testnode_1")
         with patch(
             "ceph_devstack.resources.ceph.containers.host.path_exists"
         ) as mock_exists:
@@ -62,8 +66,8 @@ class TestTestnode:
             mounts = testnode._get_available_dmi_mounts()
             assert mounts == []
 
-    def test_get_available_dmi_mounts_with_partial_files_present(self, cls):
-        testnode = cls("testnode_1")
+    def test_get_available_dmi_mounts_with_partial_files_present(self):
+        testnode = _TestNode("testnode_1")
         with patch(
             "ceph_devstack.resources.ceph.containers.host.path_exists"
         ) as mock_exists:
@@ -75,9 +79,10 @@ class TestTestnode:
                 "/dev/null:/sys/class/dmi/id/board_serial",
             ]
 
-    def test_create_cmd_includes_dmi_mounts_when_available(self, cls):
+    def test_create_cmd_includes_dmi_mounts_when_available(self, tmp_path):
         config.load(Path(__file__).parent.joinpath("fixtures", "testnode-config.toml"))
-        testnode = cls("testnode_1")
+        config["data_dir"] = str(tmp_path)
+        testnode = _TestNode("testnode_1")
         with patch(
             "ceph_devstack.resources.ceph.containers.host.path_exists"
         ) as mock_exists:
@@ -87,9 +92,10 @@ class TestTestnode:
             assert "/dev/null:/sys/class/dmi/id/chassis_serial" in " ".join(create_cmd)
             assert "/dev/null:/sys/class/dmi/id/product_serial" in " ".join(create_cmd)
 
-    def test_create_cmd_excludes_dmi_mounts_when_unavailable(self, cls):
+    def test_create_cmd_excludes_dmi_mounts_when_unavailable(self, tmp_path):
         config.load(Path(__file__).parent.joinpath("fixtures", "testnode-config.toml"))
-        testnode = cls("testnode_1")
+        config["data_dir"] = str(tmp_path)
+        testnode = _TestNode("testnode_1")
         with patch(
             "ceph_devstack.resources.ceph.containers.host.path_exists"
         ) as mock_exists:
