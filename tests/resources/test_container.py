@@ -39,6 +39,7 @@ class TestContainerResource(_TestPodmanResource, _TestContainerBase):
 
     async def test_action_calls_cmd_with_correct_args(self, cls, action):
         if action == "build":
+            config["containers"][cls.__name__.lower()]["build_image"] = True
             config["containers"][cls.__name__.lower()]["repo"] = "/repo_path"
         obj = cls()
         with patch.object(obj, "cmd") as mock_cmd:
@@ -66,6 +67,7 @@ class TestContainerResource(_TestPodmanResource, _TestContainerBase):
         if action == "remove":
             pytest.skip("remove action doesn't stream output")
         if action == "build":
+            config["containers"][cls.__name__.lower()]["build_image"] = True
             config["containers"][cls.__name__.lower()]["repo"] = "/repo_path"
         with patch.object(cls, "cmd") as mock_cmd:
             obj = cls()
@@ -73,12 +75,28 @@ class TestContainerResource(_TestPodmanResource, _TestContainerBase):
             _, kwargs = mock_cmd.call_args
             assert kwargs.get("stream_output") is True
 
-    async def test_build_action_skips_when_no_repo(self, cls):
-        config["containers"][cls.__name__.lower()]["repo"] = ""
+    async def test_build_action_skips_when_build_image_not_set(self, cls):
         obj = cls()
         with patch.object(obj, "cmd") as mock_cmd:
             await obj.build()
             mock_cmd.assert_not_called()
+
+    async def test_should_build_defaults_to_false(self, cls):
+        obj = cls()
+        assert obj.should_build is False
+
+    async def test_build_requires_repo(self, cls):
+        config["containers"][cls.__name__.lower()]["build_image"] = True
+        obj = cls()
+        with patch.object(obj, "cmd") as mock_cmd:
+            with pytest.raises(ValueError, match="build_image requires repo"):
+                await obj.build()
+            mock_cmd.assert_not_called()
+
+    async def test_should_build_true_when_build_image_set(self, cls):
+        config["containers"][cls.__name__.lower()]["build_image"] = True
+        obj = cls()
+        assert obj.should_build is True
 
     async def test_pull_action_skips_localhost_images(self, cls):
         config["containers"]["container"]["image"] = "localhost/image:latest"
@@ -201,12 +219,18 @@ class TestContainerImageTag(_TestContainerBase):
 
 
 class TestContainerImage(_TestContainerBase):
-    def test_image_returns_config_image_when_no_repo(self, cls):
+    def test_image_returns_config_image_when_not_building(self, cls):
         obj = cls()
         assert obj.image == "example.com/image:latest"
 
-    def test_image_returns_localhost_when_repo_exists(self, cls):
+    def test_image_returns_config_image_when_repo_set_without_build_image(self, cls):
         config["containers"]["container"]["repo"] = "/path/to/repo"
+        obj = cls()
+        assert obj.image == "example.com/image:latest"
+
+    def test_image_returns_localhost_when_build_image_set(self, cls):
+        config["containers"]["container"]["repo"] = "/path/to/repo"
+        config["containers"]["container"]["build_image"] = True
         obj = cls()
         obj._image_name = "my-image"
         assert obj.image == "localhost/my-image"
@@ -221,6 +245,14 @@ class TestContainerCwd(_TestContainerBase):
     def test_cwd_returns_dot_when_no_repo(self, cls):
         obj = cls()
         assert obj.cwd == "."
+
+    def test_repo_is_none_when_unset(self, cls):
+        assert cls().repo is None
+
+    def test_repo_expands_user_and_resolves(self, cls, monkeypatch, tmp_path):
+        monkeypatch.setenv("HOME", str(tmp_path))
+        config["containers"]["container"]["repo"] = "~/src/repo"
+        assert cls().repo == (tmp_path / "src" / "repo").resolve()
 
 
 class TestContainerAddEnvToArgs(_TestContainerBase):

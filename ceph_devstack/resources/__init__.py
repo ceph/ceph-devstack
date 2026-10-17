@@ -111,6 +111,19 @@ class PodmanResource:
     def config(self):
         return self.containers_config.get(self.config_key, {})
 
+    @property
+    def repo(self) -> Optional[Path]:
+        """The configured source repo as an absolute path, or None."""
+        repo = self.config.get("repo", "")
+        if not repo:
+            return None
+        return Path(repo).expanduser().resolve()
+
+    @property
+    def should_build(self) -> bool:
+        """Whether to build this resource's image locally (build_image)."""
+        return self.config_bool("build_image")
+
     def config_bool(self, key: str, default: bool = False) -> bool:
         """Read a boolean config value: a TOML bool or a true/false string."""
         val = self.config.get(key, default)

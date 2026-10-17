@@ -150,14 +150,16 @@ machine on macOS) that should work for paths shared into the machine, but it
 is unverified.
 
 As an example, the following configuration will use a local image for paddles with the tag `TEST`; it will also create ten testnode containers; and will build its teuthology container from the git repo at `~/src/teuthology`:
-```
-containers:
-  paddles:
-    image: localhost/paddles:TEST
-  testnode:
-    count: 10
-  teuthology:
-    repo: ~/src/teuthology
+```toml
+[containers.paddles]
+image = "localhost/paddles:TEST"
+
+[containers.testnode]
+count = 10
+
+[containers.teuthology]
+repo = "~/src/teuthology"
+build_image = true
 ```
 ## Usage
 By default, pre-built container images are pulled from [quay.io/ceph-infra](https://quay.io/organization/ceph-infra). The images can be overridden via the config file. It's also possible to _build_ images from on-disk git repositories.

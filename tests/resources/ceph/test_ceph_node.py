@@ -27,8 +27,9 @@ def _proc(returncode: int) -> MagicMock:
 
 
 class TestCephNodeBuild:
-    def test_image_uses_configured_value(self, ceph_node_config, node):
-        ceph_node_config(image="quay.ceph.io/ceph-ci/ceph:custom")
+    def test_image_uses_configured_value(self, ceph_node_config, node, tmp_path):
+        # A repo alone must not switch to a locally-built image.
+        ceph_node_config(image="quay.ceph.io/ceph-ci/ceph:custom", repo=str(tmp_path))
         assert node.image == "quay.ceph.io/ceph-ci/ceph:custom"
 
     async def test_build_ignores_registry_image(self, node):

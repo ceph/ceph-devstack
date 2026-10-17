@@ -53,23 +53,15 @@ class Container(PodmanResource):
 
     @property
     def image(self):
-        if self.repo:
+        if self.should_build:
             return f"localhost/{self.image_name}"
-        return self.config["image"]
+        return self.config.get("image", "")
 
     @property
     def image_tag(self):
         if ":" not in self.image:
             return "latest"
         return self.image.split(":")[-1]
-
-    @property
-    def repo(self):
-        repo = self.config.get("repo", "")
-        try:
-            return repo.expanduser()
-        except AttributeError:
-            return os.path.expanduser(repo)
 
     @property
     def cwd(self):
@@ -88,9 +80,11 @@ class Container(PodmanResource):
         )
 
     async def build(self):
-        if not getattr(self, "repo", None):
+        if not self.should_build:
             return
-        logger.debug(f"{self.name}: building from repo: {self.repo}")
+        if not self.repo:
+            raise ValueError(f"{self.config_key}: build_image requires repo")
+        logger.debug(f"{self.name}: building from {self.cwd}")
         await self.cmd(
             self.format_cmd(self.build_cmd),
             check=True,
