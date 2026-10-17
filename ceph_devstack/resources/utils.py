@@ -36,6 +36,17 @@ def git_output(repo_path: Path, *args: str) -> str | None:
     return result.stdout.strip()
 
 
+def git_sha1(repo_path: Path) -> str | None:
+    """Resolve the HEAD commit sha1 of a git repo."""
+    return git_output(repo_path, "rev-parse", "HEAD") or None
+
+
+def git_branch(repo_path: Path) -> str | None:
+    """Resolve the current branch name of a git repo; None when detached."""
+    out = git_output(repo_path, "rev-parse", "--abbrev-ref", "HEAD")
+    return None if out in (None, "", "HEAD") else out
+
+
 def host_arch() -> str:
     """Return the host machine architecture (e.g., x86_64, aarch64)."""
     return platform.machine()
@@ -44,3 +55,24 @@ def host_arch() -> str:
 def devel_tag(branch: str, distro: str, arch: str | None = None) -> str:
     """Return the Ceph CI devel image tag, e.g. main-centos-stream9-x86_64-devel."""
     return f"{branch}-{normalize_distro(distro)}-{arch or host_arch()}-devel"
+
+
+def build_image_tags(
+    branch: str | None,
+    sha1: str | None,
+    distro: str,
+    arch: str | None = None,
+) -> dict[str, str]:
+    """Compute the three CI-pattern image tags.
+
+    Returns a dict with keys "full", "branch", "sha1" mapped to tag strings.
+    Only includes tags for which sufficient metadata is available.
+    """
+    normalized = normalize_distro(distro)
+    tags: dict[str, str] = {}
+    if branch:
+        tags["full"] = devel_tag(branch, distro, arch)
+        tags["branch"] = f"{branch}-{normalized}"
+    if sha1:
+        tags["sha1"] = f"{sha1}-{normalized}"
+    return tags

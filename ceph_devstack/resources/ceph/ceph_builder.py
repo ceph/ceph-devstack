@@ -18,7 +18,14 @@ from ceph_devstack.resources.ceph.container_repo import (
     serve_yum_repo,
 )
 from ceph_devstack.resources import PodmanResource
-from ceph_devstack.resources.utils import devel_tag, git_output, host_arch
+from ceph_devstack.resources.utils import (
+    build_image_tags,
+    devel_tag,
+    git_branch,
+    git_output,
+    git_sha1,
+    host_arch,
+)
 
 PACKAGE_SCCACHE_CONF = PROJECT_ROOT / "sccache.conf"
 PACKAGE_SCCACHE_S3_CONF = PROJECT_ROOT / "sccache-s3.conf"
@@ -207,6 +214,16 @@ class CephBuilder(PodmanResource):
         """List of compilation steps to execute."""
         default = DEFAULT_COMPILE_STEPS[self.image_builder]
         return list(self.config.get("build_steps", default))
+
+    def ci_image_tags(self) -> dict[str, str]:
+        """CI-pattern image tags for the repo's HEAD; empty without a repo."""
+        if not self.repo:
+            return {}
+        return build_image_tags(
+            branch=git_branch(self.repo),
+            sha1=git_sha1(self.repo),
+            distro=self.distro,
+        )
 
     @property
     def persistent_cache_dir(self) -> Path:
@@ -559,8 +576,8 @@ class CephBuilder(PodmanResource):
         packages_dir = find_rpm_packages_dir(self.repo, self.build_subdir)
 
         image_tag = self.runtime_image_name
-        branch = git_output(self.repo, "rev-parse", "--abbrev-ref", "HEAD")
-        sha1 = git_output(self.repo, "rev-parse", "HEAD")
+        branch = git_branch(self.repo)
+        sha1 = git_sha1(self.repo)
         if not branch or not sha1:
             logger.warning(
                 f"{self.name}: could not resolve git branch/sha for container build"

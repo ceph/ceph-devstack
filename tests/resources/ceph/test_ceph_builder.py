@@ -10,6 +10,7 @@ import pytest
 import tomlkit
 
 from ceph_devstack import DEFAULT_CEPH_IMAGE, config
+from ceph_devstack.resources.utils import host_arch
 from ceph_devstack.resources.ceph.ceph_builder import (
     BUILD_ENV_NAME,
     CONTAINER_GIT_METADATA_DIR,
@@ -615,6 +616,25 @@ class TestCephBuilder:
         assert "could not list submodules" in caplog.text
 
 
+class TestCephBuilderCiImageTags:
+    def test_empty_without_repo(self, builder_config):
+        builder_config(repo="")
+        assert CephBuilder().ci_image_tags() == {}
+
+    @patch("ceph_devstack.resources.ceph.ceph_builder.git_sha1", return_value="abc")
+    @patch("ceph_devstack.resources.ceph.ceph_builder.git_branch", return_value="main")
+    def test_uses_repo_head_and_distro(
+        self, m_branch, _m_sha1, tmp_path, builder_config
+    ):
+        builder_config(build_distro="rocky10")
+        assert CephBuilder().ci_image_tags() == {
+            "full": f"main-rockylinux-10-{host_arch()}-devel",
+            "branch": "main-rockylinux-10",
+            "sha1": "abc-rockylinux-10",
+        }
+        m_branch.assert_called_once_with(tmp_path.resolve())
+
+
 class TestCephBuilderRuntimeImage:
     async def test_compile_triggers_runtime_image_for_package_build(
         self, tmp_path, builder_config
@@ -675,8 +695,12 @@ class TestCephBuilderRuntimeImage:
                 fake_serve,
             ),
             patch(
-                "ceph_devstack.resources.ceph.ceph_builder.git_output",
-                side_effect=["main", "deadbeef"],
+                "ceph_devstack.resources.ceph.ceph_builder.git_branch",
+                return_value="main",
+            ),
+            patch(
+                "ceph_devstack.resources.ceph.ceph_builder.git_sha1",
+                return_value="deadbeef",
             ),
         ):
             await builder._build_runtime_image(ceph_version="19.2.0")
