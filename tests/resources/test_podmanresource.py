@@ -25,6 +25,11 @@ class TestPodmanResource:
         obj = cls(name="foo")
         assert obj.name == "foo"
 
+    def test_data_dir_must_be_given(self, cls, tmp_path):
+        assert cls(data_dir=tmp_path).data_dir == tmp_path
+        with pytest.raises(ValueError, match="no data_dir"):
+            _ = cls().data_dir
+
     def test_format_cmd(self, cls):
         obj = cls(name="pr")
         assert "name" in obj.cmd_vars
