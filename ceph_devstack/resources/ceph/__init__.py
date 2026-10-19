@@ -20,6 +20,7 @@ from ceph_devstack.resources.ceph.containers import (
     Teuthology,
     Archive,
 )
+from ceph_devstack.resources.ceph.ceph_node import CephNode
 from ceph_devstack.resources.ceph.host_loops import LoopDeviceMixin
 from ceph_devstack.resources.ceph.requirements import (
     HasSudo,
@@ -98,6 +99,7 @@ SERVICES: dict[str, Type[StackResource]] = {
     "teuthology": Teuthology,
     "testnode": TestNode,
     "archive": Archive,
+    "ceph_node": CephNode,
 }
 
 SECRETS = {
@@ -180,7 +182,7 @@ class CephDevStack:
         result = True
 
         result = has_sudo = await HasSudo().evaluate()
-        if "testnode" in self.service_specs:
+        if any(issubclass(SERVICES[n], LoopDeviceMixin) for n in self.service_specs):
             result = result and await LoopControlDeviceExists().evaluate()
             result = result and await LoopControlDeviceWriteable().evaluate()
             result = result and await BlockPoolDiskGroup().evaluate()
@@ -252,6 +254,8 @@ class CephDevStack:
             logger.info(
                 f"View test results at http://{host.hostname()}:{pulpito.port}/"
             )
+        if "ceph_node" in self.service_specs:
+            logger.info("Monitor the cluster with: podman exec ceph_node ceph -s")
 
     async def _gather_action(self, action: str):
         await asyncio.gather(*(getattr(obj, action)() for obj in self._objects()))

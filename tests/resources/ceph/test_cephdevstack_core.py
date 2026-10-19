@@ -345,6 +345,25 @@ services = ["postgres", "paddles"]
         assert devstack.stack_name == "minimal"
         assert set(devstack.service_specs) == {"postgres", "paddles"}
 
+    def test_ceph_stack_has_expected_services(self):
+        devstack = CephDevStack(stack_name="ceph")
+        assert devstack.stack_name == "ceph"
+        assert set(devstack.service_specs) == {"ceph_node"}
+        assert devstack.secrets == []
+
+    async def test_ceph_stack_create_prepares_node(self):
+        devstack = CephDevStack(stack_name="ceph")
+        mock_node = AsyncMock()
+        devstack.service_specs = {
+            "ceph_node": {"objects": [mock_node]},
+        }
+        with patch("ceph_devstack.resources.ceph.CephDevStackNetwork") as MockNetwork:
+            mock_network = MagicMock()
+            mock_network.create = AsyncMock()
+            MockNetwork.return_value = mock_network
+            await devstack.create()
+            mock_node.create.assert_awaited_once()
+
 
 @pytest.fixture
 def depends_config(tmp_path):

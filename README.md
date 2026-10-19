@@ -62,14 +62,17 @@ python3 -m pip install git+https://github.com/zmc/ceph-devstack.git
 ### Shared block pool (optional)
 
 To back loop devices with slices of a real NVMe device instead of sparse files,
-configure `[block_pool]` in your config. The pool is shared across all
-`testnode_*` containers. Each loop device uses that container's
+configure `[block_pool]` in your config. The pool is shared across `ceph_node`
+and all `testnode_*` containers. Each loop device uses that container's
 `loop_device_size` for its backing region on the pool parent.
 
 ```toml
 [block_pool]
 parent = "/dev/nvme0n1p1"   # or a dedicated whole disk
 allow_enroll = true         # first run only; unset afterward
+
+[containers.ceph_node]
+loop_device_size = "5G"
 
 [containers.testnode]
 loop_device_size = "5G"
@@ -110,6 +113,41 @@ If `block_pool.json` is lost but the on-disk marker remains, start again to
 reclaim the marker; the device is not reformatted. The old allocations are
 forgotten, though, so regions that still hold data are refused as not empty
 until they are wiped.
+
+### Ceph stack
+
+To run a single-container local Ceph cluster instead of teuthology:
+
+```bash
+ceph-devstack --stack ceph pull
+ceph-devstack --stack ceph create
+ceph-devstack --stack ceph start
+podman logs -f ceph_node
+podman exec ceph_node ceph -s
+```
+
+The default image, `quay.ceph.io/ceph-ci/ceph:main`, is amd64-only. On arm64
+hosts, including Apple Silicon podman machines, OSDs can't be created under
+emulation (`io_setup` fails with ENOSYS), so use an arm64 image instead:
+
+```toml
+[containers.ceph_node]
+image = "quay.io/ceph/ceph:v20"
+```
+
+The dashboard settings (port, user, password, SSL) are under
+`[containers.ceph_node]`; see the defaults in `ceph_devstack/config.toml`. Set
+`dashboard_show_password = true` to print the password in the container log.
+Cluster state lives in the stack's `cluster` directory and loop device backing
+files in its `disk_images` directory; `remove` deletes both. Without a block
+pool, `create` also clears an old `cluster` directory, since the fresh sparse
+backing files would not match it.
+
+ceph-devstack prepares the `cluster` directory (entrypoint script, dashboard
+password) on the local machine, and podman bind-mounts it from the container
+host, so the path must be visible on both. With a `RemoteHost` (e.g. a podman
+machine on macOS) that should work for paths shared into the machine, but it
+is unverified.
 
 As an example, the following configuration will use a local image for paddles with the tag `TEST`; it will also create ten testnode containers; and will build its teuthology container from the git repo at `~/src/teuthology`:
 ```

@@ -27,6 +27,22 @@ services = [
 ]
 secrets = ["ssh_keypair"]
 
+[stacks.ceph]
+services = ["ceph_node"]
+secrets = []
+
+[containers.ceph_node]
+# CephNode handles cluster deployment and runtime (ceph stack)
+image = "quay.ceph.io/ceph-ci/ceph:main"
+loop_device_count = 3
+loop_device_size = "5G"
+dashboard = true                     # enable the mgr dashboard
+dashboard_port = 8080
+dashboard_ssl = false
+dashboard_user = "admin"
+dashboard_password = "admin"
+dashboard_show_password = false      # log the password on container start
+
 [containers.archive]
 image = "python:alpine"
 

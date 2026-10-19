@@ -1,10 +1,32 @@
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from ceph_devstack import config
 from ceph_devstack.resources.ceph.block_devices import BlockDeviceProvisioner
+
+
+@pytest.fixture
+def ceph_node_config() -> Callable[..., dict]:
+    """Return a factory that overrides the shipped ceph_node config."""
+
+    def _configure(**overrides) -> dict:
+        config["containers"]["ceph_node"].update(overrides)
+        return config["containers"]["ceph_node"]
+
+    return _configure
+
+
+@pytest.fixture
+def mock_loop_devices():
+    """Patch LoopDeviceMixin.allocate_loop_devices to return three devices."""
+    with patch(
+        "ceph_devstack.resources.ceph.host_loops.LoopDeviceMixin.allocate_loop_devices",
+        return_value=["/dev/loop0", "/dev/loop1", "/dev/loop2"],
+    ) as mock:
+        yield mock
 
 
 @pytest.fixture

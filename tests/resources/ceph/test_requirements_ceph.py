@@ -289,22 +289,24 @@ def requirement_results():
 
 
 class TestCephDevStackCheckRequirements:
+    @pytest.mark.parametrize("service", ["testnode", "ceph_node", "postgres"])
     @pytest.mark.parametrize("failing", [None, *CORE_REQUIREMENTS])
     async def test_check_requirements_fails_if_any_requirement_fails(
-        self, requirement_results, failing
+        self, requirement_results, failing, service
     ):
         devstack = CephDevStack()
-        devstack.service_specs = {"testnode": {}}
-        config["containers"] = {"testnode": {}}
+        devstack.service_specs = {service: {}}
         if failing:
             requirement_results[failing] = False
-        assert await devstack.check_requirements() is (failing is None)
+        # Only services with loop devices need the loop/block-pool checks.
+        needed = failing == "HasSudo" or service != "postgres"
+        assert await devstack.check_requirements() is (failing is None or not needed)
 
     async def test_check_requirements_returns_false_when_repo_missing(
         self, requirement_results
     ):
         devstack = CephDevStack()
-        devstack.containers_config = {"custom": {"repo": "/nonexistent/path"}}
-        devstack.service_specs = {"custom": {}}
+        devstack.containers_config = {"teuthology": {"repo": "/nonexistent/path"}}
+        devstack.service_specs = {"teuthology": {}}
         with patch("ceph_devstack.host.host.path_exists", return_value=False):
             assert await devstack.check_requirements() is False

@@ -10,7 +10,10 @@ from ceph_devstack.resources.ceph.host_loops import LoopDeviceMixin
 from ceph_devstack.resources.container import Container
 
 
-ARCHIVE_MOUNT_SUFFIX = "" if sys.platform == "darwin" else ":z"
+# Bind-mount option that has podman relabel the source for SELinux (shared).
+# Chosen from the local platform, so with a RemoteHost it describes this
+# machine rather than the podman host.
+SELINUX_RELABEL_SUFFIX = "" if sys.platform == "darwin" else ":z"
 
 
 class Postgres(Container):
@@ -111,7 +114,7 @@ class Archive(Container):
         "-p",
         "8000:8000",
         "-v",
-        "{archive_dir}:/archive" + ARCHIVE_MOUNT_SUFFIX,
+        "{archive_dir}:/archive" + SELINUX_RELABEL_SUFFIX,
         "--name",
         "{name}",
         "{image}",
@@ -298,7 +301,7 @@ class Teuthology(Container):
             "--secret",
             "id_rsa",
             "-v",
-            "{archive_dir}:/archive_dir" + ARCHIVE_MOUNT_SUFFIX,
+            "{archive_dir}:/archive_dir" + SELINUX_RELABEL_SUFFIX,
         ]
         ansible_inv = os.environ.get("ANSIBLE_INVENTORY_PATH")
         if ansible_inv:

@@ -38,6 +38,9 @@ ceph-devstack = "ceph_devstack.cli:main"
 [tool.setuptools]
 include-package-data = true
 
+[tool.setuptools.package-data]
+"ceph_devstack.resources.ceph" = ["*.sh"]
+
 [tool.setuptools.packages.find]
 namespaces = false
 
