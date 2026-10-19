@@ -1,4 +1,8 @@
+import hashlib
+import re
 import shlex
+
+from subprocess import CalledProcessError
 
 from ceph_devstack import logger, PROJECT_ROOT
 from ceph_devstack.block_pool import BlockPool, BlockPoolError, shared_pool
@@ -118,43 +122,20 @@ class BlockPoolParentAccessible(BlockPoolRequirement):
 
 
 class SELinuxModule(FixableRequirement):
+    MODULE_NAME = "ceph_devstack"
+    SHIPPED_PP = PROJECT_ROOT / f"{MODULE_NAME}.pp"
+
     def __init__(self):
         fix_cmd = self.fix_cmd_prebuilt
         if self.host.type == "remote":
             fix_cmd = ["podman", "machine", "ssh", "--"] + fix_cmd
         self.fix_cmd = fix_cmd
 
-    fix_cmd_build = [
-        "(sudo",
-        "dnf",
-        "install",
-        "-y",
-        "policycoreutils-devel",
-        "selinux-policy-devel",
-        "&&",
-        "cd",
-        str(PROJECT_ROOT),
-        "&&",
-        "make",
-        "-f",
-        "/usr/share/selinux/devel/Makefile",
-        "ceph_devstack.pp",
-        "&&",
-        "sudo",
-        "semodule",
-        "-i",
-        "ceph_devstack.pp)",
-    ]
-    fix_cmd_prebuilt = [
-        "sudo",
-        "semodule",
-        "-i",
-        str(PROJECT_ROOT / "ceph_devstack.pp"),
-    ]
+    fix_cmd_prebuilt = ["sudo", "semodule", "-i", str(SHIPPED_PP)]
     suggest_msg = (
         "SELinux is in Enforcing mode. To run nested rootless podman "
         "containers, it is necessary to install ceph-devstack's SELinux "
-        "module"
+        "module (module may be missing or outdated)"
     )
 
     async def check(self):
@@ -162,4 +143,50 @@ class SELinuxModule(FixableRequirement):
         assert proc.stdout is not None
         await proc.wait()
         out = (await proc.stdout.read()).decode()
-        return "ceph_devstack" in out.split("\n")
+        if self.MODULE_NAME not in out.split("\n"):
+            return False
+        if not self.SHIPPED_PP.exists():
+            logger.warning(
+                f"Shipped SELinux module not found at {self.SHIPPED_PP}; "
+                "skipping hash check"
+            )
+            return True
+        installed_hash = await self._installed_module_hash()
+        if installed_hash is None:
+            logger.warning(
+                "Could not extract the installed SELinux module; "
+                "falling back to presence-only check"
+            )
+            return True
+        shipped_hash = hashlib.sha256(self.SHIPPED_PP.read_bytes()).hexdigest()
+        if installed_hash != shipped_hash:
+            logger.warning(
+                f"SELinux module hash mismatch: shipped={shipped_hash}, "
+                f"installed={installed_hash}"
+            )
+            return False
+        return True
+
+    async def _installed_module_hash(self) -> str | None:
+        """sha256 of the installed module, or None if it can't be determined."""
+        # semodule -E writes a byte-identical .pp into the cwd (and chatters
+        # on stdout, hence the redirect); always clean up the temp dir.
+        script = (
+            "d=$(mktemp -d) || exit 1; "
+            "trap 'sudo rm -rf \"$d\"' EXIT; "
+            'cd "$d" && '
+            f"sudo semodule -E {self.MODULE_NAME} >/dev/null 2>&1 && "
+            f"sha256sum {self.MODULE_NAME}.pp"
+        )
+        try:
+            proc = await self.host.arun(["bash", "-c", script])
+            assert proc.stdout is not None
+            if await proc.wait() != 0:
+                return None
+            out = (await proc.stdout.read()).decode().split()
+        except (OSError, CalledProcessError):
+            return None
+        # Output is "hash  filename"; anything else is unparseable.
+        if out and re.fullmatch(r"[0-9a-f]{64}", out[0]):
+            return out[0]
+        return None

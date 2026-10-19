@@ -1,4 +1,5 @@
 import contextlib
+import hashlib
 import subprocess
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -101,38 +102,62 @@ class TestLoopControlDeviceWriteable:
         assert self.req.fix_cmd == fix_cmd
 
 
+SHIPPED = b"shipped module"
+SHIPPED_HASH = hashlib.sha256(SHIPPED).hexdigest().encode()
+LISTED = b"ceph_devstack\nother_module\n"
+
+
+def _proc(returncode: int, stdout: bytes) -> AsyncMock:
+    proc = AsyncMock()
+    proc.stdout.read = AsyncMock(return_value=stdout)
+    proc.wait = AsyncMock(return_value=returncode)
+    return proc
+
+
 class TestSELinuxModule:
-    def setup_method(self):
-        self.req = SELinuxModule()
+    @pytest.fixture
+    def req(self, tmp_path):
+        shipped_pp = tmp_path / "ceph_devstack.pp"
+        shipped_pp.write_bytes(SHIPPED)
+        with patch.object(SELinuxModule, "SHIPPED_PP", shipped_pp):
+            yield SELinuxModule()
 
-    async def test_selinux_module_check_true(self):
-        mock_proc = AsyncMock()
-        mock_proc.stdout = AsyncMock()
-        mock_proc.stdout.read = AsyncMock(return_value=b"ceph_devstack\nother_module\n")
-        mock_proc.wait = AsyncMock(return_value=0)
-        with patch.object(self.req.host, "arun", return_value=mock_proc):
-            result = await self.req.check()
-            assert result is True
+    @pytest.mark.parametrize(
+        "listed, extract_rc, extract_out, expected",
+        [
+            pytest.param(b"other_module\n", 0, b"", False, id="not-listed"),
+            pytest.param(
+                LISTED, 0, SHIPPED_HASH + b"  ceph_devstack.pp\n", True, id="current"
+            ),
+            pytest.param(
+                LISTED, 0, b"0" * 64 + b"  ceph_devstack.pp\n", False, id="stale"
+            ),
+            # Any failure to read the installed module must not read as
+            # "stale", otherwise doctor --fix would reinstall forever.
+            pytest.param(LISTED, 1, b"", True, id="extract-failed"),
+            pytest.param(
+                LISTED,
+                0,
+                b"Extracting at highest existing priority '400'.\n",
+                True,
+                id="unparseable",
+            ),
+        ],
+    )
+    async def test_check(self, req, listed, extract_rc, extract_out, expected):
+        procs = [_proc(0, listed), _proc(extract_rc, extract_out)]
+        with patch.object(req.host, "arun", side_effect=procs):
+            assert await req.check() is expected
 
-    async def test_selinux_module_check_false(self):
-        mock_proc = AsyncMock()
-        mock_proc.stdout = AsyncMock()
-        mock_proc.stdout.read = AsyncMock(
-            return_value=b"other_module\nanother_module\n"
-        )
-        mock_proc.wait = AsyncMock(return_value=0)
-        with patch.object(self.req.host, "arun", return_value=mock_proc):
-            result = await self.req.check()
-            assert result is False
+    async def test_check_falls_back_when_extraction_cannot_run(self, req):
+        procs = [_proc(0, LISTED), OSError("bash not found")]
+        with patch.object(req.host, "arun", side_effect=procs):
+            assert await req.check() is True
 
-    async def test_selinux_module_check_empty_output(self):
-        mock_proc = AsyncMock()
-        mock_proc.stdout = AsyncMock()
-        mock_proc.stdout.read = AsyncMock(return_value=b"")
-        mock_proc.wait = AsyncMock(return_value=0)
-        with patch.object(self.req.host, "arun", return_value=mock_proc):
-            result = await self.req.check()
-            assert result is False
+    async def test_check_without_shipped_module_is_presence_only(self, req):
+        req.SHIPPED_PP.unlink()
+        with patch.object(req.host, "arun", side_effect=[_proc(0, LISTED)]):
+            assert await req.check() is True
 
 
 class TestSELinuxModuleFixCmd:
