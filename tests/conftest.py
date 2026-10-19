@@ -70,6 +70,20 @@ class FakeHost(Host):
     def path_exists(self, path) -> bool:
         return str(path) in self.files or bool(self._children(str(path)))
 
+    def _find(self, rest: list[str]) -> tuple[int, bytes]:
+        """``find BASE -mindepth 2 -maxdepth 2 -type d -name NAME``."""
+        base, want = rest[0].rstrip("/"), rest[-1]
+        if not self.path_exists(base):
+            return 1, b""
+        dirs = {
+            f"{base}/{parts[0]}/{want}"
+            for path in self.files
+            if path.startswith(base + "/")
+            and len(parts := path[len(base) + 1 :].split("/")) > 2
+            and parts[1] == want
+        }
+        return 0, "".join(f"{d}\n" for d in sorted(dirs)).encode()
+
     def output(self, args, input=None) -> subprocess.CompletedProcess:
         self.commands.append(args)
         name, *rest = args
@@ -81,6 +95,8 @@ class FakeHost(Host):
         elif name == "ls":
             children = self._children(rest[-1])
             rc, out = (0, "".join(f"{c}\n" for c in children).encode())
+        elif name == "find":
+            rc, out = self._find(rest)
         elif name == "realpath":
             rc, out = 0, f"{rest[0]}\n".encode()
         elif name == "losetup" and rest[0] == "--list":

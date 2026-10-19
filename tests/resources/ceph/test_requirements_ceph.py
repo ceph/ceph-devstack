@@ -269,8 +269,8 @@ class TestCephDevStackCheckRequirements:
         self, requirement_results, failing
     ):
         devstack = CephDevStack()
-        devstack.service_specs = {}
-        config["containers"] = {}
+        devstack.service_specs = {"testnode": {}}
+        config["containers"] = {"testnode": {}}
         if failing:
             requirement_results[failing] = False
         assert await devstack.check_requirements() is (failing is None)
@@ -279,9 +279,7 @@ class TestCephDevStackCheckRequirements:
         self, requirement_results
     ):
         devstack = CephDevStack()
-        devstack.service_specs = {}
-        config["containers"] = {
-            "custom": {"repo": "/nonexistent/path"},
-        }
+        devstack.containers_config = {"custom": {"repo": "/nonexistent/path"}}
+        devstack.service_specs = {"custom": {}}
         with patch("ceph_devstack.host.host.path_exists", return_value=False):
             assert await devstack.check_requirements() is False

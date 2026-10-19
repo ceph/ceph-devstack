@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 from typing import List
 
-from ceph_devstack import config, DEFAULT_CONFIG_PATH
+from ceph_devstack import DEFAULT_CONFIG_PATH
 from ceph_devstack.host import host
 from ceph_devstack.resources.ceph.host_loops import LoopDeviceMixin
 from ceph_devstack.resources.container import Container
@@ -43,8 +43,8 @@ class Postgres(Container):
         "APP_DB_NAME": "paddles",
     }
 
-    def __init__(self, name: str = ""):
-        super().__init__(name)
+    def __init__(self, name: str = "", **kwargs):
+        super().__init__(name, **kwargs)
         username = self.env_vars["APP_DB_USER"]
         password = self.env_vars["APP_DB_PASS"]
         db_name = self.env_vars["APP_DB_NAME"]
@@ -124,10 +124,12 @@ class Archive(Container):
 
     @property
     def archive_dir(self):
-        return (Path(config["data_dir"]) / "archive").expanduser()
+        return self.data_dir / "archive"
 
 
 class Pulpito(Container):
+    port = 8081
+    cmd_vars = Container.cmd_vars + ["port"]
     create_cmd = [
         "podman",
         "container",
@@ -136,9 +138,9 @@ class Pulpito(Container):
         "--network",
         "ceph-devstack",
         "-p",
-        "8081:8081",
+        "{port}:{port}",
         "--health-cmd",
-        "CMD curl -f http://0.0.0.0:8081",
+        "CMD curl -f http://0.0.0.0:{port}",
         "--health-interval",
         "10s",
         "--health-retries",
@@ -177,13 +179,13 @@ class TestNode(LoopDeviceMixin, Container):
         "CEPH_VOLUME_ALLOW_LOOP_DEVICES": "true",
     }
 
-    def __init__(self, name: str = ""):
-        super().__init__(name=name)
+    def __init__(self, name: str = "", **kwargs):
+        super().__init__(name=name, **kwargs)
         self._init_loop_devices()
 
     @property
     def loop_img_dir(self):
-        return (Path(config["data_dir"]) / "disk_images").expanduser()
+        return self.data_dir / "disk_images"
 
     @property
     def create_cmd(self):
@@ -227,9 +229,9 @@ class TestNode(LoopDeviceMixin, Container):
     def additional_volumes(self):
         volumes = []
         if (
-            sshd_config := DEFAULT_CONFIG_PATH.parent.joinpath(
-                "sshd_config"
-            ).expanduser()
+            sshd_config := DEFAULT_CONFIG_PATH.parent.joinpath("sshd_config")
+            .expanduser()
+            .absolute()
         ) and sshd_config.exists():
             volumes.extend(
                 [
@@ -290,7 +292,7 @@ class Teuthology(Container):
             "create",
             "-i",
             "--label",
-            f"testnode_count={config['containers']['testnode']['count']}",
+            f"testnode_count={self.containers_config['testnode']['count']}",
             "--network",
             "ceph-devstack",
             "--secret",
@@ -300,6 +302,7 @@ class Teuthology(Container):
         ]
         ansible_inv = os.environ.get("ANSIBLE_INVENTORY_PATH")
         if ansible_inv:
+            ansible_inv = Path(ansible_inv).expanduser().absolute()
             cmd += [
                 "-v",
                 f"{ansible_inv}/inventory:/etc/ansible/hosts",
@@ -307,15 +310,18 @@ class Teuthology(Container):
                 f"{ansible_inv}/secrets:/etc/ansible/secrets",
             ]
         ssh_auth_socket = os.environ.get("SSH_AUTH_SOCK")
-        if ssh_auth_socket and Path(ssh_auth_socket).exists():
-            cmd += [
-                "-v",
-                f"{ssh_auth_socket}:{ssh_auth_socket}",
-                "-e",
-                f"SSH_AUTH_SOCK={ssh_auth_socket}",
-            ]
+        if ssh_auth_socket:
+            ssh_auth_socket = Path(ssh_auth_socket).expanduser().absolute()
+            if ssh_auth_socket.exists():
+                cmd += [
+                    "-v",
+                    f"{ssh_auth_socket}:{ssh_auth_socket}",
+                    "-e",
+                    f"SSH_AUTH_SOCK={ssh_auth_socket}",
+                ]
         custom_conf = os.environ.get("TEUTHOLOGY_CONF")
         if custom_conf:
+            custom_conf = Path(custom_conf).expanduser().absolute()
             cmd += [
                 "-v",
                 f"{custom_conf}:/tmp/conf.yaml",
@@ -324,6 +330,7 @@ class Teuthology(Container):
             ]
         teuthology_yaml = os.environ.get("TEUTHOLOGY_YAML")
         if teuthology_yaml:
+            teuthology_yaml = Path(teuthology_yaml).expanduser().absolute()
             cmd += [
                 "-v",
                 f"{teuthology_yaml}:/root/.teuthology.yaml",
@@ -351,8 +358,8 @@ class Teuthology(Container):
 
     @property
     def archive_dir(self) -> Path:
-        return (Path(config["data_dir"]) / "archive").expanduser()
+        return self.data_dir / "archive"
 
     async def create(self):
-        self.archive_dir.expanduser().resolve().mkdir(parents=True, exist_ok=True)
+        self.archive_dir.mkdir(parents=True, exist_ok=True)
         await super().create()

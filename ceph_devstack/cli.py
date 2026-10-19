@@ -2,7 +2,8 @@ import asyncio
 import logging
 import sys
 
-from pathlib import Path
+from argparse import Namespace
+from subprocess import CalledProcessError
 
 from ceph_devstack import config, logger, parse_args, VERBOSE
 from ceph_devstack.block_pool import BlockPoolError, format_size, shared_pool
@@ -14,22 +15,6 @@ CONFIG_HANDLERS = {
     "get": lambda config, args: print(config.get_value(args.name)),
     "set": lambda config, args: print(config.set_value(args.name, args.value)),
     "unset": lambda config, args: config.unset_value(args.name),
-}
-
-COMMAND_HANDLERS = {
-    "doctor": None,
-    "apply": lambda args, obj: obj.apply(args.command),
-    "pull": lambda _, obj: obj.pull(),
-    "build": lambda _, obj: obj.build(),
-    "create": lambda _, obj: obj.create(),
-    "remove": lambda _, obj: obj.remove(),
-    "start": lambda _, obj: obj.start(),
-    "stop": lambda _, obj: obj.stop(),
-    "watch": lambda _, obj: obj.watch(),
-    "wait": lambda args, obj: obj.wait(container_name=args.container),
-    "logs": lambda args, obj: obj.logs(
-        run_name=args.run_name, job_id=args.job_id, locate=args.locate
-    ),
 }
 
 
@@ -67,6 +52,36 @@ def block_pool_status() -> int:
     return 0
 
 
+def _action_kwargs(args: Namespace) -> dict:
+    match args.command:
+        case "wait":
+            return {"container_name": args.container}
+        case "logs":
+            return {
+                "run_name": args.run_name,
+                "job_id": args.job_id,
+                "locate": args.locate,
+            }
+        case _:
+            return {}
+
+
+async def _apply(stack: CephDevStack, action: str, **kwargs) -> int:
+    """Check requirements, then run the action (if any) on the stack."""
+    if not all(
+        await asyncio.gather(
+            check_requirements(),
+            stack.check_requirements(),
+        )
+    ):
+        logger.error("Requirements not met!")
+        return 1
+    if action == "doctor":
+        return 0
+    result = await stack.apply(action, **kwargs)
+    return result if result is not None else 0
+
+
 def main() -> int:
     args = parse_args(sys.argv[1:])
     config.load(args.config_file)
@@ -80,25 +95,17 @@ def main() -> int:
             return 2
         return block_pool_status()
     config["args"] = vars(args)
-    data_path = Path(config["data_dir"]).expanduser()
-    data_path.mkdir(parents=True, exist_ok=True)
-    obj = CephDevStack()
-
-    async def run():
-        if not all(
-            await asyncio.gather(
-                check_requirements(),
-                obj.check_requirements(),
-            )
-        ):
-            logger.error("Requirements not met!")
-            return 1
-        handler = COMMAND_HANDLERS.get(args.command)
-        if handler:
-            return await handler(args, obj)
-
     try:
-        sys.exit(asyncio.run(run()))
+        stack = CephDevStack(stack_name=args.stack)
+    except ValueError as exc:
+        logger.error(str(exc))
+        return 1
+    stack.data_dir.mkdir(parents=True, exist_ok=True)
+    action = args.command
+    try:
+        return asyncio.run(_apply(stack, action, **_action_kwargs(args)))
+    except CalledProcessError as exc:
+        return exc.returncode if exc.returncode is not None else 1
     except KeyboardInterrupt:
         logger.debug("Exiting!")
         return 130  # 128 + SIGINT
