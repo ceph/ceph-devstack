@@ -10,7 +10,12 @@ from typing import List
 import tomlkit
 
 from ceph_devstack import DEFAULT_CEPH_IMAGE, PROJECT_ROOT, logger
-from ceph_devstack.distros import DEFAULT_BUILD_DISTRO, get_package_type
+from ceph_devstack.distros import (
+    DEFAULT_BUILD_DISTRO,
+    DISTRO_PYTHON_VERSIONS,
+    PYTHON_VERSION_DISTROS,
+    get_package_type,
+)
 from ceph_devstack.host import host
 from ceph_devstack.resources.ceph.container_repo import (
     build_sh_env,
@@ -68,6 +73,10 @@ class CephBuilder(PodmanResource):
     """
 
     _name = "ceph_builder"
+
+    def __init__(self, name: str = "", **kwargs):
+        super().__init__(name, **kwargs)
+        self._resolved_distro: str | None = None
 
     @staticmethod
     def git_worktree_info(repo: Path) -> tuple[Path, str] | None:
@@ -201,6 +210,8 @@ class CephBuilder(PodmanResource):
 
     @property
     def distro(self) -> str:
+        if self._resolved_distro is not None:
+            return self._resolved_distro
         return self.config.get("build_distro", DEFAULT_BUILD_DISTRO)
 
     @property
@@ -461,6 +472,26 @@ class CephBuilder(PodmanResource):
             cmd.append(f"--extra={extra}")
         return cmd
 
+    async def _detect_base_python(self) -> str | None:
+        """Return the Python 3 major.minor version from the base image.
+
+        Returns ``None`` (with a warning) when detection fails, e.g. because
+        the image has not been pulled or does not contain ``python3``.
+        """
+        out = await self.run_in_image(
+            self.base_image,
+            "python3",
+            "-c",
+            "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')",
+        )
+        if out is None:
+            logger.warning(
+                f"{self.name}: could not detect Python version in base image "
+                f"{self.base_image}"
+            )
+            return None
+        return out.strip()
+
     def _make_dist_version(self) -> str:
         """Generate version string for make-dist from git describe."""
         assert self.repo is not None
@@ -528,9 +559,52 @@ class CephBuilder(PodmanResource):
                 "packages"
             )
 
+    async def resolve_distro(self) -> None:
+        """Auto-select ``build_distro`` to match the base image's Python.
+
+        Only takes effect in binary-patch mode, with a repo to build. The
+        result is stored on the instance, so all later callers
+        (``_bwc_base_cmd``, ``ci_image_tags``, ...) see the same distro via
+        the ``distro`` property, even if detection failed and the configured
+        or default distro was kept. An explicit ``build_distro`` is never
+        overridden; a mismatch only produces a warning.
+        """
+        if self.image_builder is not ImageBuilder.BINARY_PATCH or not self.repo:
+            return
+        if self._resolved_distro is not None:
+            return
+        configured = self.config.get("build_distro")
+        self._resolved_distro = configured or DEFAULT_BUILD_DISTRO
+        py_version = await self._detect_base_python()
+        if py_version is None:
+            return
+        recommended = PYTHON_VERSION_DISTROS.get(py_version)
+        if recommended is None:
+            logger.warning(
+                f"{self.name}: base image has Python {py_version} which "
+                f"does not map to a known build distro; "
+                f"known versions: {', '.join(sorted(PYTHON_VERSION_DISTROS))}"
+            )
+            return
+        if configured is None:
+            if recommended != DEFAULT_BUILD_DISTRO:
+                logger.info(
+                    f"{self.name}: auto-selected build_distro='{recommended}' "
+                    f"to match base image Python {py_version}"
+                )
+            self._resolved_distro = recommended
+        elif configured != recommended:
+            logger.warning(
+                f"{self.name}: build_distro='{configured}' has Python "
+                f"{DISTRO_PYTHON_VERSIONS.get(configured, '?')} but the "
+                f"base image uses Python {py_version}; consider setting "
+                f"build_distro='{recommended}'"
+            )
+
     async def compile(self):
         """Run compilation using build-with-container.py."""
         self._check_supported()
+        await self.resolve_distro()
         ceph_version = None
         if self.image_builder is ImageBuilder.PACKAGE_BUILD:
             # make-dist provides the source tarball the package build needs.
@@ -722,6 +796,8 @@ class CephBuilder(PodmanResource):
         if self._skip_without_repo("pull"):
             return
 
+        await self.resolve_distro()
+
         logger.info(f"{self.name}: Pulling builder container image")
         cmd = [
             *self._bwc_base_cmd(),
@@ -744,6 +820,8 @@ class CephBuilder(PodmanResource):
                 f"{self.name}: build_image is not enabled, skipping builder image build"
             )
             return
+
+        await self.resolve_distro()
 
         logger.info(f"{self.name}: Building builder container image")
         cmd = [

@@ -3,6 +3,8 @@
 import pytest
 
 from ceph_devstack.distros import (
+    DISTRO_PYTHON_VERSIONS,
+    PYTHON_VERSION_DISTROS,
     from_image_for_distro,
     get_package_type,
     normalize_distro,
@@ -48,3 +50,9 @@ class TestNormalizeDistro:
 )
 def test_from_image_for_distro(distro, expected):
     assert from_image_for_distro(distro) == expected
+
+
+def test_python_version_distros_prefers_first_listed_distro():
+    assert PYTHON_VERSION_DISTROS == {"3.9": "centos9", "3.12": "centos10"}
+    for python, distro in PYTHON_VERSION_DISTROS.items():
+        assert DISTRO_PYTHON_VERSIONS[distro] == python

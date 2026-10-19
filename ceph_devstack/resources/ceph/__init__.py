@@ -263,6 +263,7 @@ class CephDevStack:
         registry = self._first("registry", Registry)
         if not registry or not self.builder.repo:
             return
+        await self.builder.resolve_distro()
         local_image = self.builder.runtime_image_name
         logger.info(f"Pushing {local_image} to local registry...")
         await registry.push_image(local_image, self.builder)

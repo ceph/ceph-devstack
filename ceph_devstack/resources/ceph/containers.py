@@ -586,7 +586,7 @@ class Teuthology(Container):
             return {}
         return yaml.safe_load(out) or {}
 
-    def _local_artifact_defaults(self) -> dict:
+    async def _local_artifact_defaults(self) -> dict:
         """teuthology.yaml defaults that point jobs at this stack's artifacts."""
         defaults: dict = {}
         if "package_repo" in self.active_services:
@@ -596,6 +596,8 @@ class Teuthology(Container):
                 ]
             }
         if "registry" in self.active_services:
+            # The tag must name the same distro as the pushed image's tags.
+            await self.builder.resolve_distro()
             sha1_tag = self.builder.ci_image_tags().get("sha1")
             if sha1_tag:
                 defaults["cephadm"] = {
@@ -632,7 +634,7 @@ class Teuthology(Container):
         if self.local_artifacts and (
             {"package_repo", "registry"} & set(self.active_services)
         ):
-            if defaults := self._local_artifact_defaults():
+            if defaults := await self._local_artifact_defaults():
                 conf = deep_merge(conf, {"defaults": defaults})
             conf["suite_verify_ceph_hash"] = False
         path.parent.mkdir(parents=True, exist_ok=True)

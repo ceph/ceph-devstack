@@ -152,6 +152,7 @@ services = ["postgres"]
         mock_registry.push_image.assert_awaited_once_with(
             "localhost/ceph-devstack:main", devstack.builder
         )
+        assert devstack.builder.distro == "centos9"
 
 
 class TestSuiteExtraArgsWiring:
@@ -314,6 +315,24 @@ class TestTeuthologyConfigGeneration:
         assert content["ceph_git_url"] == CONTAINER_CEPH_REPO_URL
         assert content["ceph_qa_suite_git_url"] == CONTAINER_CEPH_REPO_URL
         assert content["suite_verify_ceph_hash"] is False
+
+    async def test_cephadm_image_uses_the_resolved_distro(
+        self, tmp_path, builder_config, mock_git
+    ):
+        """The registry push and teuthology.yaml must name the same tag."""
+        builder_config()  # binary-patch, build_distro unset
+        config["stacks"]["teuthology"]["local_artifacts"] = True
+        devstack = CephDevStack()
+        teuth = devstack.service_specs["teuthology"]["objects"][0]
+        fake_cmd = make_teuthology_cmd_mock(yaml.dump({"q": 1}))
+        with (
+            patch.object(CephBuilder, "run_in_image", AsyncMock(return_value="3.12")),
+            patch.object(teuth, "cmd", fake_cmd),
+        ):
+            await teuth.generate_config()
+        image = self.content(teuth)["defaults"]["cephadm"]["containers"]["image"]
+        assert devstack.builder.distro == "centos10"
+        assert image == "registry:5000/ceph:abc123-centos-stream10"
 
     @pytest.mark.parametrize("service", ["package_repo", "registry"])
     async def test_defaults_only_for_deployed_services(

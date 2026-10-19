@@ -48,6 +48,8 @@ base_image = "quay.ceph.io/ceph-ci/ceph:main"  # Image cpatch patches (binary-pa
                                    # base_image is itself a localhost/ image, which is reused.
 # build_dir = "build"              # relative to repo; passed to build-with-container.py -b
 # build_distro = "centos9"         # Selects quay.io/ceph-ci/ceph-build:centos9 for compilation
+                                   # In binary-patch mode, auto-detected from base_image Python
+                                   # version when not set (e.g. Python 3.12 -> centos10).
 image_builder = "binary-patch"     # or "package-build" (RPMs + container/build.sh via CUSTOM_CEPH_REPO_URL)
 cpatch_args = []                   # cpatch component flags (binary-patch only); e.g. ["--core"]
 # build_image = true               # Build the builder container image locally instead of pulling

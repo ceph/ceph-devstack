@@ -137,6 +137,7 @@ class TestCephBuilder:
         builder.cmd = AsyncMock()
         builder._prepare_build_env = lambda: (None, [])
         builder._build_cpatch_image = AsyncMock()
+        builder.resolve_distro = AsyncMock()
 
         await builder.compile()
 
@@ -380,6 +381,7 @@ class TestCephBuilder:
 
         builder = CephBuilder()
         builder.cmd = AsyncMock()
+        builder.resolve_distro = AsyncMock()
 
         await builder.build()
 
@@ -398,6 +400,7 @@ class TestCephBuilder:
 
         builder = CephBuilder()
         builder.cmd = AsyncMock()
+        builder.resolve_distro = AsyncMock()
 
         await builder.pull()
 
@@ -497,6 +500,7 @@ class TestCephBuilder:
         builder_config(build_image=build_image)
         builder = CephBuilder()
         builder.cmd = AsyncMock()
+        builder.resolve_distro = AsyncMock()
         await builder.build()
         assert builder.cmd.await_count == (1 if build_image else 0)
 
@@ -658,6 +662,7 @@ class TestCephBuilderRuntimeImage:
         builder = CephBuilder()
         builder._prepare_build_env = lambda: (None, [])
         builder.cmd = AsyncMock()
+        builder.resolve_distro = AsyncMock()
         builder._build_runtime_image = AsyncMock()
         builder._build_cpatch_image = AsyncMock()
 
@@ -718,3 +723,62 @@ class TestCephBuilderRuntimeImage:
         assert ["podman", "tag", "build.sh.output", "localhost/ceph-devstack:test"] in (
             tag_cmds
         )
+
+
+class TestCephBuilderBuildDistro:
+    async def test_detect_base_python_parses_version(self, builder_config):
+        builder_config(base_image="quay.ceph.io/ceph-ci/ceph:main")
+        builder = CephBuilder()
+        mock_proc = AsyncMock(returncode=0)
+        mock_proc.collect_output = AsyncMock(return_value=("3.12\n", ""))
+        builder.cmd = AsyncMock(return_value=mock_proc)
+
+        assert await builder._detect_base_python() == "3.12"
+        cmd = builder.cmd.call_args[0][0]
+        assert cmd[:5] == ["podman", "run", "--rm", "--entrypoint", "python3"]
+        assert cmd[5] == "quay.ceph.io/ceph-ci/ceph:main"
+
+    async def test_detect_base_python_returns_none_on_failure(self, builder_config):
+        builder_config()
+        builder = CephBuilder()
+        builder.run_in_image = AsyncMock(return_value=None)
+        assert await builder._detect_base_python() is None
+
+    @pytest.mark.parametrize(
+        "configured, python, expected",
+        [
+            (None, "3.12", "centos10"),
+            ("centos9", "3.12", "centos9"),
+            (None, "3.9", "centos9"),
+        ],
+    )
+    async def test_resolve_distro(self, builder_config, configured, python, expected):
+        overrides = {"build_distro": configured} if configured else {}
+        builder_config(**overrides)
+        builder = CephBuilder()
+        builder.run_in_image = AsyncMock(return_value=f"{python}\n")
+
+        await builder.resolve_distro()
+
+        assert builder.distro == expected
+        if configured is None:
+            assert "build_distro" not in config["containers"]["ceph_builder"]
+
+    async def test_failed_detection_sticks(self, builder_config):
+        builder_config()
+        builder = CephBuilder()
+        builder.run_in_image = AsyncMock(side_effect=[None, "3.12\n"])
+        await builder.resolve_distro()
+        await builder.resolve_distro()
+        assert builder.distro == "centos9"
+        builder.run_in_image.assert_awaited_once()
+
+    @pytest.mark.parametrize(
+        "overrides", [{"repo": ""}, {"image_builder": "package-build"}]
+    )
+    async def test_resolve_distro_skipped(self, builder_config, overrides):
+        builder_config(**overrides)
+        builder = CephBuilder()
+        builder.run_in_image = AsyncMock()
+        await builder.resolve_distro()
+        builder.run_in_image.assert_not_awaited()

@@ -8,6 +8,19 @@ DEFAULT_BUILD_DISTRO = "centos9"
 CENTOS_STREAM9_IMAGE = "quay.io/centos/centos:stream9"
 ROCKY10_IMAGE = "docker.io/rockylinux/rockylinux:10"
 
+# The Python each build distro ships; cpatch output must match the base
+# image's Python, so the build distro is chosen from it.
+DISTRO_PYTHON_VERSIONS: dict[str, str] = {
+    "centos9": "3.9",
+    "centos10": "3.12",
+    "rocky10": "3.12",
+}
+# The preferred build distro for each Python version: the first listed above
+# (reversed so that earlier entries overwrite later ones).
+PYTHON_VERSION_DISTROS: dict[str, str] = {
+    python: distro for distro, python in reversed(DISTRO_PYTHON_VERSIONS.items())
+}
+
 package_types = {
     "rpm": ["rhel", "fedora", "centos", "rocky", "alma", "opensuse", "sle"],
     "deb": ["debian", "ubuntu"],
