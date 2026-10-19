@@ -20,6 +20,7 @@ from ceph_devstack.resources.ceph.containers import (
     Teuthology,
     Archive,
 )
+from ceph_devstack.resources.ceph.ceph_builder import CephBuilder
 from ceph_devstack.resources.ceph.ceph_node import CephNode
 from ceph_devstack.resources.ceph.host_loops import LoopDeviceMixin
 from ceph_devstack.resources.ceph.requirements import (
@@ -99,6 +100,7 @@ SERVICES: dict[str, Type[StackResource]] = {
     "teuthology": Teuthology,
     "testnode": TestNode,
     "archive": Archive,
+    "ceph_builder": CephBuilder,
     "ceph_node": CephNode,
 }
 

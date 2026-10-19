@@ -2,7 +2,11 @@
 
 import pytest
 
-from ceph_devstack.distros import get_package_type, normalize_distro
+from ceph_devstack.distros import (
+    from_image_for_distro,
+    get_package_type,
+    normalize_distro,
+)
 
 
 class TestGetPackageType:
@@ -31,3 +35,16 @@ class TestNormalizeDistro:
     )
     def test_normalize(self, distro, expected):
         assert normalize_distro(distro) == expected
+
+
+@pytest.mark.parametrize(
+    "distro, expected",
+    [
+        ("centos9", "quay.io/centos/centos:stream9"),
+        ("rocky9", "quay.io/centos/centos:stream9"),
+        ("centos10", "docker.io/rockylinux/rockylinux:10"),
+        ("rocky10", "docker.io/rockylinux/rockylinux:10"),
+    ],
+)
+def test_from_image_for_distro(distro, expected):
+    assert from_image_for_distro(distro) == expected

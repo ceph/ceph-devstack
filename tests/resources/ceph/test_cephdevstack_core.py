@@ -364,6 +364,20 @@ services = ["postgres", "paddles"]
             await devstack.create()
             mock_node.create.assert_awaited_once()
 
+    async def test_build_ceph_stack_start_calls_builder_start(self):
+        """Verify that CephBuilder.start() is called during build-ceph stack start."""
+        devstack = CephDevStack(stack_name="build-ceph")
+        mock_builder = AsyncMock()
+        devstack.service_specs = {
+            "ceph_builder": {"objects": [mock_builder]},
+        }
+        with patch("ceph_devstack.resources.ceph.CephDevStackNetwork") as MockNetwork:
+            mock_network = MagicMock()
+            mock_network.create = AsyncMock()
+            MockNetwork.return_value = mock_network
+            await devstack.start()
+            mock_builder.start.assert_awaited_once()
+
 
 @pytest.fixture
 def depends_config(tmp_path):

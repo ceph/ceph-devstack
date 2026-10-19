@@ -149,6 +149,81 @@ host, so the path must be visible on both. With a `RemoteHost` (e.g. a podman
 machine on macOS) that should work for paths shared into the machine, but it
 is unverified.
 
+### Build with cpatch (binary-patch)
+
+With `image_builder = "binary-patch"` (the default), the build-ceph stack:
+
+1. Compiles Ceph binaries via `src/script/build-with-container.py`
+2. Patches the compiled binaries into a base container image (`base_image`,
+   default `quay.ceph.io/ceph-ci/ceph:main`) using `src/script/cpatch.py`,
+   producing a local image (default `localhost/ceph-cpatch:main`)
+
+Point the ceph stack at that image:
+
+```toml
+[containers.ceph_builder]
+repo = "~/src/ceph"
+# image_builder = "binary-patch"  # default
+
+[containers.ceph_node]
+image = "localhost/ceph-cpatch:main"
+```
+
+Then run the two stacks manually:
+
+```bash
+ceph-devstack --stack build-ceph start
+ceph-devstack --stack ceph start
+```
+
+Or use `depends` to combine them (see below). This mode is faster for
+iterative development since it compiles only the changed C++ targets and
+patches them into an existing image rather than rebuilding RPM packages.
+
+### Build Ceph packages and a local runtime image
+
+With `image_builder = "package-build"` under `[containers.ceph_builder]` (RPM
+distros such as `centos9` only), the build-ceph stack:
+
+1. Builds packages via `src/script/build-with-container.py`
+2. Indexes the RPM tree (`createrepo`) and serves it briefly over HTTP on the
+   build host (inside the Podman machine on macOS)
+3. Runs upstream `container/build.sh` with `CUSTOM_CEPH_REPO_URL` pointing at a
+   generated yum `.repo` file, then tags the result as a local image (default
+   `localhost/ceph-devstack:main`)
+
+Point the ceph stack at that image:
+
+```toml
+[containers.ceph_builder]
+repo = "~/src/ceph"
+image_builder = "package-build"
+build_distro = "centos9"
+
+[containers.ceph_node]
+image = "localhost/ceph-devstack:main"
+```
+
+Then run the two stacks manually:
+
+```bash
+ceph-devstack --stack build-ceph start
+ceph-devstack --stack ceph start
+```
+
+Or use `depends` to combine them into a single command. Add this to your
+user config (`~/.config/ceph-devstack/config.toml`):
+
+```toml
+[stacks.ceph]
+depends = ["build-ceph"]
+```
+
+Then `ceph-devstack --stack ceph start` will automatically run the
+`build-ceph` stack first, compiling Ceph and producing the runtime image
+before deploying the cluster. `stop` and `remove` do not cascade into
+dependency stacks, so build caches are preserved.
+
 As an example, the following configuration will use a local image for paddles with the tag `TEST`; it will also create ten testnode containers; and will build its teuthology container from the git repo at `~/src/teuthology`:
 ```toml
 [containers.paddles]

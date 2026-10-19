@@ -9,6 +9,27 @@ from ceph_devstack.resources.ceph.block_devices import BlockDeviceProvisioner
 
 
 @pytest.fixture
+def builder_config(tmp_path: Path) -> Callable[..., dict]:
+    """Return a factory that installs a minimal ceph_builder config.
+
+    Call it with keyword overrides to customise individual keys.
+    """
+
+    def _configure(**overrides) -> dict:
+        base = {
+            "image_builder": "binary-patch",
+            "repo": str(tmp_path),
+            "sccache": False,
+            "npm_cache": False,
+        }
+        base.update(overrides)
+        config["containers"]["ceph_builder"] = base
+        return config["containers"]["ceph_builder"]
+
+    return _configure
+
+
+@pytest.fixture
 def ceph_node_config() -> Callable[..., dict]:
     """Return a factory that overrides the shipped ceph_node config."""
 

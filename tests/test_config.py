@@ -1,7 +1,7 @@
 import pytest
 import tomlkit
 
-from ceph_devstack import config, Config
+from ceph_devstack import DEFAULT_CEPH_IMAGE, config, Config
 
 
 @pytest.fixture(scope="function")
@@ -119,20 +119,16 @@ class TestConfigDefaults:
                     ],
                     "secrets": ["ssh_keypair"],
                 },
-                "ceph": {"services": ["ceph_node"], "secrets": []},
+                "ceph": {
+                    "services": ["ceph_node"],
+                    "secrets": [],
+                },
+                "build-ceph": {
+                    "services": ["ceph_builder"],
+                    "secrets": [],
+                },
             },
             "containers": {
-                "ceph_node": {
-                    "image": "quay.ceph.io/ceph-ci/ceph:main",
-                    "loop_device_count": 3,
-                    "loop_device_size": "5G",
-                    "dashboard": True,
-                    "dashboard_port": 8080,
-                    "dashboard_ssl": False,
-                    "dashboard_user": "admin",
-                    "dashboard_password": "admin",
-                    "dashboard_show_password": False,
-                },
                 "archive": {"image": "python:alpine"},
                 "beanstalk": {"image": "quay.io/ceph-infra/teuthology-beanstalkd:main"},
                 "paddles": {"image": "quay.io/ceph-infra/paddles:main"},
@@ -147,5 +143,28 @@ class TestConfigDefaults:
                     "image": "quay.io/ceph-infra/teuthology-testnode:main",
                 },
                 "teuthology": {"image": "quay.io/ceph-infra/teuthology-dev:main"},
+                "ceph_builder": {
+                    "base_image": DEFAULT_CEPH_IMAGE,
+                    "image_builder": "binary-patch",
+                    "cpatch_args": [],
+                    "builder_image_repo": "quay.ceph.io/ceph-ci/ceph-build",
+                    "sccache": True,
+                    "sccache_mode": "local",
+                    "sccache_rw_mode": False,
+                    "sccache_cache_size": "100G",
+                    "sccache_debug": False,
+                    "npm_cache": True,
+                },
+                "ceph_node": {
+                    "image": "quay.ceph.io/ceph-ci/ceph:main",
+                    "loop_device_count": 3,
+                    "loop_device_size": "5G",
+                    "dashboard": True,
+                    "dashboard_port": 8080,
+                    "dashboard_ssl": False,
+                    "dashboard_user": "admin",
+                    "dashboard_password": "admin",
+                    "dashboard_show_password": False,
+                },
             },
         }

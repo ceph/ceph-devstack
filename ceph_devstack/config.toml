@@ -27,12 +27,48 @@ services = [
 ]
 secrets = ["ssh_keypair"]
 
+[stacks.build-ceph]
+services = ["ceph_builder"]
+secrets = []
+
 [stacks.ceph]
 services = ["ceph_node"]
 secrets = []
 
+[containers.ceph_builder]
+# CephBuilder handles compilation and build artifacts (build-ceph stack)
+# Build from a local ceph.git checkout:
+# repo = "~/dev/ceph"
+base_image = "quay.ceph.io/ceph-ci/ceph:main"  # Image cpatch patches (binary-patch). The result is
+                                   # localhost/ceph-cpatch:main (binary-patch) or
+                                   # localhost/ceph-devstack:main (package-build), unless
+                                   # base_image is itself a localhost/ image, which is reused.
+# build_dir = "build"              # relative to repo; passed to build-with-container.py -b
+# build_distro = "centos9"         # Selects quay.io/ceph-ci/ceph-build:centos9 for compilation
+image_builder = "binary-patch"     # or "package-build" (RPMs + container/build.sh via CUSTOM_CEPH_REPO_URL)
+cpatch_args = []                   # cpatch component flags (binary-patch only); e.g. ["--core"]
+# build_image = true               # Build the builder container image locally instead of pulling
+                                   # from the registry. Default is false (pull pre-published image).
+builder_image_repo = "quay.ceph.io/ceph-ci/ceph-build"  # Registry repo for the builder container image
+# builder_image_variant = "default"  # Builder image variant (default, debug, etc.)
+
+# build_steps = ["build"]          # compilation steps for build-with-container.py
+sccache = true                     # local disk cache (see sccache.conf); set to false to disable
+sccache_mode = "local"             # local (default) or s3 for shared remote cache
+sccache_rw_mode = false            # enable read-write mode (requires AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in environment for S3)
+# sccache_cache_path = "/path/to/sccache"  # default: <data_dir>/build-ceph/cache/sccache
+sccache_cache_size = "100G"        # local cache size limit
+sccache_debug = false              # enable SCCACHE_LOG=debug on build stdout
+# sccache_conf = "/path/to/sccache.conf"  # override bundled config entirely
+npm_cache = true                   # persist dashboard npm downloads
+# npm_cache_path = "/path/to/npm"  # default: <data_dir>/build-ceph/cache/npm
+# dnf_cache = false                  # persist dnf downloads when rebuilding ceph-build images
+# dnf_cache_path = "/path/to/dnf"  # default: <data_dir>/build-ceph/cache/dnf
+# repo may be a git worktree; ceph-devstack mounts git metadata for builds at /ceph
+
 [containers.ceph_node]
 # CephNode handles cluster deployment and runtime (ceph stack)
+# Uses image from build-ceph stack or pulled from registry
 image = "quay.ceph.io/ceph-ci/ceph:main"
 loop_device_count = 3
 loop_device_size = "5G"
@@ -42,6 +78,7 @@ dashboard_ssl = false
 dashboard_user = "admin"
 dashboard_password = "admin"
 dashboard_show_password = false      # log the password on container start
+# image = "localhost/ceph-devstack:main"
 
 [containers.archive]
 image = "python:alpine"

@@ -41,8 +41,10 @@ count = 1
 
 class TestStackDataDir:
     def test_data_dir_reflects_stack(self):
-        devstack = CephDevStack("teuthology")
-        assert str(devstack.data_dir).endswith("/teuthology")
+        build = CephDevStack("build-ceph")
+        ceph = CephDevStack("ceph")
+        assert str(build.data_dir).endswith("/build-ceph")
+        assert str(ceph.data_dir).endswith("/ceph")
 
 
 class TestParseArgsStack:

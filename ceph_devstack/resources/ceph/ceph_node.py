@@ -33,9 +33,10 @@ CAPABILITIES = [
 class CephNode(LoopDeviceMixin, Container):
     """Single-container Ceph cluster without cephadm.
 
-    Creates host loop devices and runs mon/mgr/osd inside one
-    capability-scoped container via ``ceph-node-entrypoint.sh``, which owns
-    all cluster bootstrap state under ``cluster_dir``.
+    Runs the configured image (pulled from a registry, or built locally by
+    ceph_builder), creates host loop devices, and runs mon/mgr/osd inside
+    one capability-scoped container via ``ceph-node-entrypoint.sh``, which
+    owns all cluster bootstrap state under ``cluster_dir``.
     """
 
     _name = "ceph_node"
