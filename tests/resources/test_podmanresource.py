@@ -82,3 +82,36 @@ class TestPodmanResource:
             m_arun.assert_awaited_once()
         assert "Command failed (1)" in caplog.text
         assert "podman-failure" in caplog.text
+
+
+class Named(PodmanResource):
+    _name = "named_thing"
+
+
+@pytest.mark.parametrize(
+    "cls, name, key",
+    [
+        (PodmanResource, "", "podmanresource"),
+        (PodmanResource, "other", "podmanresource"),
+        (Named, "", "named_thing"),
+        (Named, "named_thing_1", "named_thing"),
+    ],
+)
+def test_config_key_ignores_instance_name(cls, name, key):
+    assert cls(name).config_key == key
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [(True, True), (False, False), ("Yes", True), ("1", True), ("false", False)],
+)
+def test_config_bool(value, expected):
+    obj = Named(containers_config={"named_thing": {"opt": value}})
+    assert obj.config_bool("opt") is expected
+    assert obj.config_bool("missing", default=expected) is expected
+
+
+def test_config_bool_rejects_unknown_strings():
+    obj = Named(containers_config={"named_thing": {"opt": "flase"}})
+    with pytest.raises(ValueError, match="named_thing.opt"):
+        obj.config_bool("opt")

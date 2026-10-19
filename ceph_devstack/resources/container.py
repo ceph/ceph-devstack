@@ -46,10 +46,6 @@ class Container(PodmanResource):
         return args
 
     @property
-    def config(self):
-        return self.containers_config.get(self.__class__.__name__.lower(), {})
-
-    @property
     def image_name(self) -> str:
         if self._image_name is not None:
             return self._image_name

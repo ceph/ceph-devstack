@@ -102,6 +102,26 @@ class PodmanResource:
             return config["containers"]
         return self._containers_config
 
+    @property
+    def config_key(self) -> str:
+        """The [containers] section for this resource: its class-level name."""
+        return type(self)._name or type(self).__name__.lower()
+
+    @property
+    def config(self):
+        return self.containers_config.get(self.config_key, {})
+
+    def config_bool(self, key: str, default: bool = False) -> bool:
+        """Read a boolean config value: a TOML bool or a true/false string."""
+        val = self.config.get(key, default)
+        if isinstance(val, bool):
+            return val
+        if str(val).lower() in ("true", "1", "yes"):
+            return True
+        if str(val).lower() in ("false", "0", "no"):
+            return False
+        raise ValueError(f"{self.config_key}.{key}: expected a boolean, got {val!r}")
+
     async def cmd(
         self,
         args: List[str],
