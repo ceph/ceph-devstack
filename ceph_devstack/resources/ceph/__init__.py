@@ -306,7 +306,7 @@ class CephDevStack:
     async def watch(self):
         logger.info(
             "Entering watch mode: containers will be recreated if removed "
-            "and restarted if stopped."
+            "and, except for teuthology, restarted if stopped."
         )
         containers = list(self._objects())
         logger.info(f"Watching {containers}")
@@ -319,7 +319,9 @@ class CephDevStack:
                         )
                         await container.create()
                         await container.start()
-                    elif not await container.is_running():
+                    elif not await container.is_running() and not isinstance(
+                        container, Teuthology
+                    ):
                         logger.info(f"Container {container.name} stopped; restarting")
                         await container.start()
 
