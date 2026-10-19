@@ -8,7 +8,7 @@ import psutil
 import signal
 import subprocess
 
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 
 from ceph_devstack import logger, VERBOSE
 
@@ -94,7 +94,7 @@ class Command:
     def __init__(
         self,
         args: List[str],
-        cwd: Optional[pathlib.Path] = None,
+        cwd: Optional[Union[str, pathlib.Path]] = None,
         env: Optional[Dict] = None,
         stream_output: bool = False,
     ):
@@ -104,8 +104,8 @@ class Command:
             "stdout": asyncio.subprocess.PIPE,
             "stderr": asyncio.subprocess.PIPE,
         }
-        if cwd:
-            self.kwargs.update(cwd=cwd)
+        if cwd is not None:
+            self.kwargs["cwd"] = pathlib.Path(cwd).expanduser().absolute()
         self.stream_output = stream_output
 
     def _make_log_msg(self) -> str:

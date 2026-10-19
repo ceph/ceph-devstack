@@ -24,7 +24,7 @@ class Host:
     def cmd(
         self,
         args: List[str],
-        cwd: Optional[pathlib.Path] = None,
+        cwd: Optional[Union[str, pathlib.Path]] = None,
         env: Optional[Dict] = None,
         stream_output: bool = False,
     ) -> Command:
@@ -38,7 +38,7 @@ class Host:
     def run(
         self,
         args: List[str],
-        cwd: Optional[pathlib.Path] = None,
+        cwd: Optional[Union[str, pathlib.Path]] = None,
         env: Optional[Dict] = None,
     ):
         return self.cmd(args, cwd=cwd, env=env).run()
@@ -46,7 +46,7 @@ class Host:
     async def arun(
         self,
         args: List[str],
-        cwd: Optional[pathlib.Path] = None,
+        cwd: Optional[Union[str, pathlib.Path]] = None,
         env: Optional[Dict] = None,
         stream_output: bool = False,
     ) -> Subprocess:
@@ -215,7 +215,7 @@ class RemoteHost(Host):
     def cmd(
         self,
         args: List[str],
-        cwd: Optional[pathlib.Path] = None,
+        cwd: Optional[Union[str, pathlib.Path]] = None,
         env: Optional[Dict] = None,
         stream_output: bool = False,
     ):

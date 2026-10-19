@@ -6,7 +6,7 @@ import subprocess
 
 from pathlib import Path
 from subprocess import CalledProcessError
-from typing import List, Dict, Optional, Protocol, Set
+from typing import List, Dict, Optional, Protocol, Set, Union
 
 from ceph_devstack import config
 from ceph_devstack.exec import Subprocess
@@ -128,11 +128,14 @@ class PodmanResource:
         check: bool = False,
         force_local: bool = False,
         stream_output: bool = False,
+        cwd: Optional[Union[str, Path]] = None,
+        env: Optional[Dict[str, str]] = None,
     ) -> Subprocess:
         exec_host = local_host if force_local else host
         proc = await exec_host.arun(
             args,
-            cwd=Path(self.cwd),
+            cwd=cwd if cwd is not None else self.cwd,
+            env=env,
             stream_output=stream_output,
         )
         returncode = await proc.wait()
@@ -152,7 +155,8 @@ class PodmanResource:
             v = getattr(self, k, None)
             if v is not None:
                 if isinstance(v, Path):
-                    v = v.expanduser()
+                    # Stringify only when interpolating into argv templates.
+                    v = os.fspath(v.expanduser().absolute())
                 vars[k] = v
         return [s.format(**vars) for s in args]
 
