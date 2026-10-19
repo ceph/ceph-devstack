@@ -1,8 +1,10 @@
 import json
 import logging
+import math
 import os
 import pathlib
 import socket
+import subprocess
 import sys
 import yaml
 
@@ -54,6 +56,57 @@ class Host:
         if isinstance(path, str):
             path = pathlib.Path(path)
         return path.expanduser().exists()
+
+    def output(
+        self, args: List[str], input: Optional[bytes] = None
+    ) -> subprocess.CompletedProcess:
+        """Run args to completion on this host; capture stdout/stderr as bytes.
+
+        This blocks the caller (and any running event loop) until the command
+        exits; it is meant for short queries and small device reads/writes.
+        """
+        return self.cmd(args).capture(input)
+
+    def read_text(self, path: Union[str, pathlib.Path]) -> Optional[str]:
+        """Contents of a file on this host, or None if it cannot be read."""
+        proc = self.output(["cat", str(path)])
+        return proc.stdout.decode() if proc.returncode == 0 else None
+
+    def list_dir(self, path: Union[str, pathlib.Path]) -> List[str]:
+        """Entry names in a directory on this host; empty if it is unreadable."""
+        proc = self.output(["ls", "-1", str(path)])
+        return proc.stdout.decode().splitlines() if proc.returncode == 0 else []
+
+    def realpath(self, path: Union[str, pathlib.Path]) -> str:
+        """Canonical path on this host; the input unchanged if it can't resolve."""
+        proc = self.output(["realpath", str(path)])
+        return proc.stdout.decode().strip() if proc.returncode == 0 else str(path)
+
+    def device_mounted(self, device: str) -> bool:
+        """True if a filesystem on this host is mounted from device."""
+        proc = self.output(["findmnt", "-n", "-o", "TARGET", "--source", device])
+        return proc.returncode == 0 and bool(proc.stdout.strip())
+
+    def read_bytes(
+        self, path: Union[str, pathlib.Path], offset: int, length: int
+    ) -> bytes:
+        """Read length (> 0) bytes at offset from a file or device on this host."""
+        bs = math.gcd(offset, length)
+        args = ["dd", f"if={path}", f"bs={bs}", f"skip={offset // bs}"]
+        proc = self.output(args + [f"count={length // bs}"])
+        if proc.returncode != 0:
+            raise OSError(f"cannot read {path}: {proc.stderr.decode().strip()}")
+        return proc.stdout
+
+    def write_bytes(
+        self, path: Union[str, pathlib.Path], offset: int, data: bytes
+    ) -> None:
+        """Write data (non-empty) at offset into a file or device on this host."""
+        bs = math.gcd(offset, len(data))
+        args = ["dd", f"of={path}", f"bs={bs}", f"seek={offset // bs}"]
+        proc = self.output(args + ["conv=notrunc,fsync"], input=data)
+        if proc.returncode != 0:
+            raise OSError(f"cannot write {path}: {proc.stderr.decode().strip()}")
 
     def hostname(self) -> str:
         name = socket.getfqdn()

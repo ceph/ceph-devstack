@@ -124,6 +124,13 @@ class Command:
         proc.wait()
         return proc
 
+    def capture(self, input: Optional[bytes] = None) -> subprocess.CompletedProcess:
+        """Run to completion, feeding input on stdin and capturing output."""
+        logger.log(VERBOSE, self._make_log_msg())
+        return subprocess.run(
+            self.args, env=self.env, input=input, capture_output=True, check=False
+        )
+
     async def arun(self) -> Subprocess:
         logger.log(VERBOSE, self._make_log_msg())
         loop = asyncio.get_running_loop()
