@@ -1,6 +1,5 @@
 import asyncio
 import json
-import os
 from pathlib import Path
 from typing import Protocol
 
@@ -184,8 +183,10 @@ class BlockDeviceProvisioner:
             ["sudo", "mknod", "-m700", device, "b", "7", device_pos],
             check=True,
         )
+        # Use host.user_ids() to get the container host's uid:gid (not the local process uid:gid)
+        uid, gid = host.user_ids()
         await self._cmd(
-            ["sudo", "chown", f"{os.getuid()}:{os.getgid()}", device],
+            ["sudo", "chown", f"{uid}:{gid}", device],
             check=True,
         )
         if (pool := self.pool) is not None:

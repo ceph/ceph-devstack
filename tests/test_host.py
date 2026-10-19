@@ -43,6 +43,16 @@ class TestLocalHost:
             ["findmnt", "-n", "-o", "TARGET", "--source", "/dev/loop3"]
         )
 
+    def test_user_ids_returns_os_ids(self, host):
+        uid, gid = host.user_ids()
+        assert uid == os.getuid()
+        assert gid == os.getgid()
+        assert isinstance(uid, int)
+        assert isinstance(gid, int)
+
+
+SSH = ["podman", "machine", "ssh", "--"]
+
 
 class TestRemoteHost:
     def test_write_bytes_pipes_data_through_machine_ssh(self):
@@ -63,3 +73,45 @@ class TestRemoteHost:
             "conv=notrunc,fsync",
         ]
         assert kwargs["input"] == b"m" * 4096
+
+    @pytest.mark.parametrize(
+        "args,expected",
+        [
+            (["podman", "ps"], ["podman", "ps"]),
+            (
+                ["sudo", "losetup", "/dev/loop0"],
+                SSH + ["sudo", "losetup", "/dev/loop0"],
+            ),
+            (["bash", "-c", "echo hi; ls"], SSH + ["bash", "-c", "'echo hi; ls'"]),
+            (
+                ["podman", "unshare", "rm", "/p"],
+                SSH + ["podman", "unshare", "rm", "/p"],
+            ),
+        ],
+    )
+    def test_cmd_runs_non_podman_commands_in_machine(self, args, expected):
+        assert RemoteHost().cmd(args).args == expected
+
+    def test_user_ids_parses_and_caches(self):
+        remote = RemoteHost()
+        outputs = {"-u": b"501\n", "-g": b"1000\n"}
+
+        def output(args):
+            return subprocess.CompletedProcess(args, 0, outputs[args[1]], b"")
+
+        with patch.object(remote, "output", side_effect=output) as mock_output:
+            assert remote.user_ids() == (501, 1000)
+            assert remote.user_ids() == (501, 1000)
+        assert [c.args[0] for c in mock_output.call_args_list] == [
+            ["id", "-u"],
+            ["id", "-g"],
+        ]
+
+    def test_user_ids_raises_on_invalid_output(self):
+        remote = RemoteHost()
+        bad = subprocess.CompletedProcess([], 0, b"not-a-number\n", b"")
+        with (
+            patch.object(remote, "output", return_value=bad),
+            pytest.raises(RuntimeError, match="'id -u'"),
+        ):
+            remote.user_ids()

@@ -1,15 +1,17 @@
+import functools
 import json
 import logging
 import math
 import os
 import pathlib
+import shlex
 import socket
 import subprocess
 import sys
 import yaml
 
 from packaging.version import parse as parse_version, Version
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 from .exec import Command, Subprocess
 
@@ -190,6 +192,10 @@ class Host:
             return False
         return await proc.wait() == 0
 
+    def user_ids(self) -> Tuple[int, int]:
+        """Return (uid, gid) of the user running this host."""
+        return (os.getuid(), os.getgid())
+
 
 class LocalHost(Host):
     pass
@@ -200,9 +206,10 @@ class RemoteHost(Host):
     base_args = ["podman", "machine", "ssh"]
 
     def _remote_args(self, args: List[str], stream_output: bool) -> List[str]:
+        # Quote each arg so compound arguments like "bash -c '<cmd>'" stay as one shell word
         remote = list(self.base_args)
         remote.append("--")
-        remote.extend(args)
+        remote.extend(shlex.quote(arg) for arg in args)
         return remote
 
     def cmd(
@@ -212,7 +219,7 @@ class RemoteHost(Host):
         env: Optional[Dict] = None,
         stream_output: bool = False,
     ):
-        if args[0] != "podman":
+        if args[0] != "podman" or args[:2] == ["podman", "unshare"]:
             args = self._remote_args(args, stream_output)
         return super().cmd(args, cwd=cwd, env=env, stream_output=stream_output)
 
@@ -225,6 +232,21 @@ class RemoteHost(Host):
         proc = self.run(["hostname"])
         assert proc.stdout is not None
         return proc.stdout.read().decode().strip()
+
+    def user_ids(self) -> Tuple[int, int]:
+        """Return (uid, gid) of the user running podman on the container host."""
+        return self._user_ids
+
+    @functools.cached_property
+    def _user_ids(self) -> Tuple[int, int]:
+        return self._id("-u"), self._id("-g")
+
+    def _id(self, flag: str) -> int:
+        out = self.output(["id", flag]).stdout.decode().strip()
+        try:
+            return int(out)
+        except ValueError as e:
+            raise RuntimeError(f"Failed to parse output of 'id {flag}': {out!r}") from e
 
 
 local_host = LocalHost()
