@@ -12,12 +12,14 @@ import pytest
 from ceph_devstack import config
 from ceph_devstack.block_pool import BlockPool, shared_pool
 from ceph_devstack.host import Host
+from ceph_devstack.resources.ceph.host_loops import LoopDeviceMixin
 
 
 @pytest.fixture(autouse=True)
 def reset_config():
     config.load()
     shared_pool.cache_clear()
+    LoopDeviceMixin._allocated.clear()
     yield
 
 

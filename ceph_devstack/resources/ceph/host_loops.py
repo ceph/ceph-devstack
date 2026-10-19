@@ -1,7 +1,7 @@
 """Host loop device discovery, allocation, and provisioning mixin."""
 
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from ceph_devstack import logger
 from ceph_devstack.block_pool import shared_pool
@@ -25,6 +25,7 @@ class LoopDeviceMixin:
     config: dict[str, Any]
     cmd: Any
     trigger_udev: bool = False
+    _allocated: ClassVar[set[int]] = set()
 
     @property
     def loop_img_dir(self) -> Path:
@@ -46,7 +47,7 @@ class LoopDeviceMixin:
         cls, owner: str, count: int, image_dir: Path
     ) -> list[int]:
         """Pick loop numbers for an owner from config count and host availability."""
-        used = cls.discover_used_loop_numbers(image_dir)
+        used = cls.discover_used_loop_numbers(image_dir) | cls._allocated
         reclaimed = cls.owner_loop_numbers(owner, image_dir)
         numbers: list[int] = []
         for index in range(count):
@@ -58,6 +59,7 @@ class LoopDeviceMixin:
                 candidate += 1
             numbers.append(candidate)
             used.add(candidate)
+        cls._allocated.update(numbers)
         return numbers
 
     @classmethod
@@ -74,13 +76,17 @@ class LoopDeviceMixin:
         self._devices: list[str] | None = None
         self._block_device_provisioner: BlockDeviceProvisioner | None = None
 
-    @property
-    def devices(self) -> list[str]:
+    def allocate_devices(self) -> list[str]:
+        """Pick this container's host loop devices now, if not chosen already."""
         if self._devices is None:
             self._devices = self.allocate_loop_devices(
                 self.name, self.loop_device_count, self.loop_img_dir
             )
         return self._devices
+
+    @property
+    def devices(self) -> list[str]:
+        return self.allocate_devices()
 
     def _block_provisioner(self) -> BlockDeviceProvisioner:
         if self._block_device_provisioner is None:
@@ -108,9 +114,10 @@ class LoopDeviceMixin:
 
         Devices are found from host state (plus any picked earlier in this
         process), so removal never allocates fresh numbers that might belong
-        to someone else.
+        to someone else. Their numbers are then released for reallocation.
         """
         provisioner = self._block_provisioner()
         devices = set(provisioner.owned_devices()) | set(self._devices or [])
         await provisioner.remove_devices(sorted(devices, key=loop_number))
+        self._allocated.difference_update(loop_number(d) for d in devices)
         self._devices = None

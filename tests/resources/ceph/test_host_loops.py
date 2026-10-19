@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -89,3 +89,29 @@ class TestHostLoops:
             await node.remove_loop_devices()
         allocate.assert_not_called()
         remove.assert_awaited_once_with(["/dev/loop4"])
+
+    def test_allocate_loop_numbers_avoids_cross_call_collisions(
+        self, fake_host, tmp_path
+    ):
+        """Multiple owners allocating from the same dir get distinct numbers."""
+        make_backing(fake_host, tmp_path, "existing-0")
+        a = LoopDeviceMixin.allocate_loop_numbers("testnode_0", 1, tmp_path)
+        b = LoopDeviceMixin.allocate_loop_numbers("testnode_1", 1, tmp_path)
+        c = LoopDeviceMixin.allocate_loop_numbers("testnode_2", 1, tmp_path)
+        assert a == [1]
+        assert b == [2]
+        assert c == [3]
+
+    async def test_removed_devices_are_released_for_reallocation(self, tmp_path):
+        first = make_node("testnode_0", tmp_path)
+        assert first.allocate_devices() == ["/dev/loop0", "/dev/loop1"]
+        provisioner = MagicMock(
+            owned_devices=MagicMock(return_value=[]), remove_devices=AsyncMock()
+        )
+        with patch.object(first, "_block_provisioner", return_value=provisioner):
+            await first.remove_loop_devices()
+        provisioner.remove_devices.assert_awaited_once_with(
+            ["/dev/loop0", "/dev/loop1"]
+        )
+        second = make_node("testnode_1", tmp_path)
+        assert second.allocate_devices() == ["/dev/loop0", "/dev/loop1"]

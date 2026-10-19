@@ -61,6 +61,17 @@ class TestCephDevStackServiceSpecs:
         assert testnode_objects[1].name == "testnode_1"
         assert testnode_objects[2].name == "testnode_2"
 
+    def test_multiple_testnodes_get_distinct_loop_devices(self, tmp_path):
+        config["data_dir"] = str(tmp_path)
+        devstack = CephDevStack()
+        testnode_objects = devstack.service_specs["testnode"]["objects"]
+        all_devices = []
+        for node in testnode_objects:
+            all_devices.extend(node.devices)
+        assert len(all_devices) == len(set(all_devices)), (
+            f"Loop device collision: {all_devices}"
+        )
+
     def test_service_specs_sets_postgres_paddles_url(self):
         devstack = CephDevStack()
         paddles_obj = devstack.service_specs["paddles"]["objects"][0]
