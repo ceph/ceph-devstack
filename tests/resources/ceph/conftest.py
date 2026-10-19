@@ -9,6 +9,29 @@ from ceph_devstack.resources.ceph.block_devices import BlockDeviceProvisioner
 
 
 @pytest.fixture
+def teuthology_services() -> list[str]:
+    """The shipped teuthology stack's services."""
+    return list(config["stacks"]["teuthology"]["services"])
+
+
+@pytest.fixture
+def mock_git() -> Iterator[None]:
+    """Make every repo look like it is at sha1 abc123 on branch main."""
+    with (
+        patch(
+            "ceph_devstack.resources.ceph.ceph_builder.git_sha1", return_value="abc123"
+        ),
+        patch(
+            "ceph_devstack.resources.ceph.ceph_builder.git_branch", return_value="main"
+        ),
+        patch(
+            "ceph_devstack.resources.ceph.containers.git_sha1", return_value="abc123"
+        ),
+    ):
+        yield
+
+
+@pytest.fixture
 def builder_config(tmp_path: Path) -> Callable[..., dict]:
     """Return a factory that installs a minimal ceph_builder config.
 

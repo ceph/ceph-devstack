@@ -116,8 +116,11 @@ class TestConfigDefaults:
                         "teuthology",
                         "testnode",
                         "archive",
+                        "package_repo",
+                        "registry",
                     ],
                     "secrets": ["ssh_keypair"],
+                    "local_artifacts": False,
                 },
                 "ceph": {
                     "services": ["ceph_node"],
@@ -143,6 +146,8 @@ class TestConfigDefaults:
                     "image": "quay.io/ceph-infra/teuthology-testnode:main",
                 },
                 "teuthology": {"image": "quay.io/ceph-infra/teuthology-dev:main"},
+                "package_repo": {"image": "python:alpine"},
+                "registry": {"image": "docker.io/library/registry:2"},
                 "ceph_builder": {
                     "base_image": DEFAULT_CEPH_IMAGE,
                     "image_builder": "binary-patch",

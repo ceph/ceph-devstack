@@ -17,7 +17,12 @@ class StackResource(Protocol):
     """Interface that CephDevStack expects from every service it manages."""
 
     def __init__(
-        self, name: str = "", *, data_dir: Path, containers_config: dict
+        self,
+        name: str = "",
+        *,
+        data_dir: Path,
+        containers_config: dict,
+        active_services: List[str],
     ) -> None: ...
 
     @property
@@ -76,11 +81,13 @@ class PodmanResource:
         *,
         data_dir: Optional[Path] = None,
         containers_config: Optional[dict] = None,
+        active_services: Optional[List[str]] = None,
     ):
         if name:
             self._name = name
         self._data_dir = data_dir
         self._containers_config = containers_config
+        self.active_services: List[str] = active_services or []
 
     @property
     def name(self) -> str:
@@ -161,6 +168,17 @@ class PodmanResource:
                 stderr=stderr or None,
             )
         return proc
+
+    async def run_in_image(self, image: str, entrypoint: str, *args: str) -> str | None:
+        """Run ``entrypoint *args`` in a throwaway container of ``image``.
+
+        Returns its stdout, or None if the command failed.
+        """
+        proc = await self.cmd(
+            ["podman", "run", "--rm", "--entrypoint", entrypoint, image, *args]
+        )
+        stdout, _ = await proc.collect_output()
+        return stdout if proc.returncode == 0 else None
 
     def format_cmd(self, args: List):
         vars = {}

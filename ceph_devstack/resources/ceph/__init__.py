@@ -19,6 +19,8 @@ from ceph_devstack.resources.ceph.containers import (
     TestNode,
     Teuthology,
     Archive,
+    PackageRepo,
+    Registry,
 )
 from ceph_devstack.resources.ceph.ceph_builder import CephBuilder
 from ceph_devstack.resources.ceph.ceph_node import CephNode
@@ -100,6 +102,8 @@ SERVICES: dict[str, Type[StackResource]] = {
     "teuthology": Teuthology,
     "testnode": TestNode,
     "archive": Archive,
+    "package_repo": PackageRepo,
+    "registry": Registry,
     "ceph_builder": CephBuilder,
     "ceph_node": CephNode,
 }
@@ -124,12 +128,16 @@ class CephDevStack:
         self.stack_name = stack_name
         self.stack_def = stacks[stack_name]
         self.active_services = list(self.stack_def.get("services", []))
+        self.local_artifacts = bool(self.stack_def.get("local_artifacts", False))
         self.data_dir = base_data_dir() / stack_name
         # The stack's own view of [containers]; the global config is untouched
         # so that other stacks (e.g. dependencies) cannot leak into this one.
         self.containers_config = deep_merge(
             config.get("containers", {}), self.stack_def.get("containers", {})
         )
+        # One ceph_builder view shared by everything that consults its repo,
+        # so a distro resolved once is seen everywhere.
+        self.builder = CephBuilder(containers_config=self.containers_config)
 
         self.service_specs = {}
         for name in self.active_services:
@@ -155,9 +163,13 @@ class CephDevStack:
             self.secrets.append(SECRETS[secret_name])
 
     def make_resource(self, cls: Type[R], name: str = "") -> R:
-        """Instantiate a resource with this stack's data_dir and config."""
+        """Instantiate a resource with this stack's data_dir, containers_config
+        and active_services."""
         return cls(
-            name, data_dir=self.data_dir, containers_config=self.containers_config
+            name,
+            data_dir=self.data_dir,
+            containers_config=self.containers_config,
+            active_services=self.active_services,
         )
 
     def _objects(self) -> Iterator[StackResource]:
@@ -179,6 +191,9 @@ class CephDevStack:
             paddles_obj.env_vars["PADDLES_SQLALCHEMY_URL"] = (
                 postgres_obj.paddles_sqla_url
             )
+
+        if teuth_obj := self._first("teuthology", Teuthology):
+            teuth_obj.use_builder(self.builder, local_artifacts=self.local_artifacts)
 
     async def check_requirements(self):
         result = True
@@ -226,11 +241,15 @@ class CephDevStack:
         await CephDevStackNetwork().create()
         for secret in self.secrets:
             await secret().create()
-        # Pre-allocate loop device numbers sequentially so concurrent creates
-        # don't race on the same device numbers.
+        # Sequential pre-create steps before the parallel phase:
+        # 1. Allocate loop device numbers so concurrent creates don't race.
+        # 2. Generate teuthology config (uses podman run to extract the
+        #    image's built-in config, which conflicts with concurrent ops).
         for obj in self._objects():
             if isinstance(obj, LoopDeviceMixin):
                 obj.allocate_devices()
+            if isinstance(obj, Teuthology):
+                await obj.generate_config()
         await self._gather_action("create")
 
     async def _run_depends(self):
@@ -239,12 +258,22 @@ class CephDevStack:
             dep = CephDevStack(stack_name=dep_name)
             await dep.start()
 
+    async def _push_to_registry(self) -> None:
+        """Push the locally-built Ceph runtime image to the local registry."""
+        registry = self._first("registry", Registry)
+        if not registry or not self.builder.repo:
+            return
+        local_image = self.builder.runtime_image_name
+        logger.info(f"Pushing {local_image} to local registry...")
+        await registry.push_image(local_image, self.builder)
+
     async def start(self):
         await self._run_depends()
         await self.create()
         logger.info("Starting containers...")
         for obj in self._objects():
             await obj.start()
+        await self._push_to_registry()
         if "teuthology" in self.service_specs:
             logger.info(
                 "All containers are running. To monitor teuthology, try running: "

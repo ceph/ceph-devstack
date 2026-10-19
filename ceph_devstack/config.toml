@@ -24,8 +24,11 @@ services = [
     "teuthology",
     "testnode",
     "archive",
+    "package_repo",
+    "registry",
 ]
 secrets = ["ssh_keypair"]
+local_artifacts = false
 
 [stacks.build-ceph]
 services = ["ceph_builder"]
@@ -103,3 +106,11 @@ image = "quay.io/ceph-infra/teuthology-testnode:main"
 
 [containers.teuthology]
 image = "quay.io/ceph-infra/teuthology-dev:main"
+
+[containers.package_repo]
+image = "python:alpine"
+# packages_dir = "~/dev/ceph/build/rpmbuild/RPMS"  # Override: path to built packages
+# If unset, derived from containers.ceph_builder.repo + build_dir
+
+[containers.registry]
+image = "docker.io/library/registry:2"
