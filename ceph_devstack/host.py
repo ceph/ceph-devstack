@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import pathlib
+import shlex
 import socket
 import sys
 import yaml
@@ -149,7 +150,8 @@ class RemoteHost(Host):
     def _remote_args(self, args: List[str], stream_output: bool) -> List[str]:
         remote = list(self.base_args)
         remote.append("--")
-        remote.extend(args)
+        # Quote each arg so compound arguments like "bash -c '<cmd>'" stay as one shell word
+        remote.extend(shlex.quote(arg) for arg in args)
         return remote
 
     def cmd(
