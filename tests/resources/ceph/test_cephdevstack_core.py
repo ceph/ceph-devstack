@@ -287,6 +287,30 @@ class TestCephDevStackStop:
             mock_paddles.stop.assert_called_once()
 
 
+class _StopWatching(Exception):
+    pass
+
+
+class TestCephDevStackWatch:
+    async def test_restarts_stopped_containers_except_teuthology(self):
+        devstack = CephDevStack()
+        teuth = AsyncMock(spec=Teuthology)
+        paddles = AsyncMock(spec=Paddles)
+        for obj, name in ((teuth, "teuthology"), (paddles, "paddles")):
+            obj.name = name
+            obj.exists.return_value = True
+            obj.is_running.return_value = False
+        paddles.start.side_effect = _StopWatching
+        devstack.service_specs = {
+            "teuthology": {"count": 1, "objects": [teuth]},
+            "paddles": {"count": 1, "objects": [paddles]},
+        }
+        with pytest.raises(_StopWatching):
+            await devstack.watch()
+        teuth.start.assert_not_awaited()
+        paddles.start.assert_awaited_once()
+
+
 class TestCephDevStackWait:
     async def test_wait_returns_process_id(self):
         devstack = CephDevStack()
