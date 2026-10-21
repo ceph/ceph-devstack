@@ -2,11 +2,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from ceph_devstack import config
 from ceph_devstack.block_pool import BlockPoolError
 from ceph_devstack.resources.ceph.block_devices import (
     BlockDeviceProvisioner,
     loop_number,
     loop_path,
+    stack_image_dirs,
 )
 from ceph_devstack.resources.ceph.host_loops import LoopDeviceMixin
 
@@ -38,6 +40,25 @@ class TestHostLoops:
     def test_discover_used_loop_numbers_from_backing_files(self, fake_host, tmp_path):
         make_backing(fake_host, tmp_path, "testnode_0-1", "ceph_node-4", "ignore-me")
         assert LoopDeviceMixin.discover_used_loop_numbers(tmp_path) == {1, 4}
+
+    def test_discover_used_loop_numbers_across_stacks(self, fake_host, tmp_path):
+        config["data_dir"] = str(tmp_path)
+        make_backing(fake_host, tmp_path / "teuthology/disk_images", "testnode_0-1")
+        make_backing(fake_host, tmp_path / "ceph/disk_images", "ceph_node-2")
+        make_backing(fake_host, tmp_path / "disk_images", "testnode_1-3")  # pre-stack
+        image_dir = tmp_path / "ceph/disk_images"
+        assert LoopDeviceMixin.discover_used_loop_numbers(image_dir) == {1, 2, 3}
+
+    def test_stack_image_dirs_takes_one_host_command(self, fake_host, tmp_path):
+        fake_host.add_file(tmp_path / "block_pool.json")
+        make_backing(fake_host, tmp_path / "teuthology/disk_images", "testnode_0-1")
+        make_backing(fake_host, tmp_path / "ceph/cluster", "ceph.conf")
+        fake_host.commands.clear()
+        assert stack_image_dirs(tmp_path) == [
+            tmp_path / "disk_images",
+            tmp_path / "teuthology/disk_images",
+        ]
+        assert [c[0] for c in fake_host.commands] == ["find"]
 
     def test_discover_used_loop_numbers_includes_attached_loops(
         self, fake_host, tmp_path
