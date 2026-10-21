@@ -104,6 +104,7 @@ class TestConfigDefaults:
     def test_config_defaults(self):
         assert config == {
             "data_dir": "~/.local/share/ceph-devstack",
+            "block_pool": {},
             "containers": {
                 "archive": {"image": "python:alpine"},
                 "beanstalk": {"image": "quay.io/ceph-infra/teuthology-beanstalkd:main"},

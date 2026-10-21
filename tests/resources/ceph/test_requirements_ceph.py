@@ -1,4 +1,6 @@
+import contextlib
 import hashlib
+import subprocess
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -9,6 +11,8 @@ from ceph_devstack.resources.ceph.requirements import (
     HasSudo,
     LoopControlDeviceExists,
     LoopControlDeviceWriteable,
+    BlockPoolDiskGroup,
+    BlockPoolParentAccessible,
     SELinuxModule,
 )
 
@@ -77,55 +81,25 @@ class TestLoopControlDeviceWriteable:
             result = await self.req.check()
             assert result is True
 
-    async def test_loop_control_writeable_check_false_local(self):
-        mock_check_proc = AsyncMock()
-        mock_check_proc.wait = AsyncMock(return_value=1)
-
-        mock_stat_proc = MagicMock()
-        mock_stat_proc.communicate = MagicMock(return_value=(b"disk", 0))
-
-        mock_whoami_proc = MagicMock()
-        mock_whoami_proc.communicate = MagicMock(return_value=(b"testuser", 0))
-
-        async def side_effect_arun(args):
-            if "stat" in args:
-                return mock_stat_proc
-            if "whoami" in args:
-                return mock_whoami_proc
-            return mock_check_proc
-
+    @pytest.mark.parametrize(
+        "host_type,fix_cmd",
+        [
+            ("local", ["sudo", "usermod", "-a", "-G", "disk", "testuser"]),
+            ("remote", ["sudo", "chgrp", "testuser", "/dev/loop-control"]),
+        ],
+    )
+    async def test_loop_control_writeable_check_false(self, host_type, fix_cmd):
+        mock_check_proc = AsyncMock(wait=AsyncMock(return_value=1))
+        mock_stat_proc = MagicMock(communicate=MagicMock(return_value=(b"disk", 0)))
+        whoami = subprocess.CompletedProcess([], 0, b"testuser\n", b"")
         with (
-            patch.object(self.req.host, "arun", side_effect=side_effect_arun),
-            patch.object(self.req.host, "type", "local"),
+            patch.object(self.req.host, "arun", return_value=mock_check_proc),
+            patch.object(self.req.host, "run", return_value=mock_stat_proc),
+            patch.object(self.req.host, "output", return_value=whoami),
+            patch.object(self.req.host, "type", host_type),
         ):
-            result = await self.req.check()
-            assert result is False
-            assert "usermod" in " ".join(self.req.fix_cmd)
-
-    async def test_loop_control_writeable_check_false_remote(self):
-        mock_check_proc = AsyncMock()
-        mock_check_proc.wait = AsyncMock(return_value=1)
-
-        mock_stat_proc = MagicMock()
-        mock_stat_proc.communicate = MagicMock(return_value=(b"disk", 0))
-
-        mock_whoami_proc = MagicMock()
-        mock_whoami_proc.communicate = MagicMock(return_value=(b"testuser", 0))
-
-        async def side_effect_arun(args):
-            if "stat" in args:
-                return mock_stat_proc
-            if "whoami" in args:
-                return mock_whoami_proc
-            return mock_check_proc
-
-        with (
-            patch.object(self.req.host, "arun", side_effect=side_effect_arun),
-            patch.object(self.req.host, "type", "remote"),
-        ):
-            result = await self.req.check()
-            assert result is False
-            assert "chgrp" in " ".join(self.req.fix_cmd)
+            assert await self.req.check() is False
+        assert self.req.fix_cmd == fix_cmd
 
 
 SHIPPED = b"shipped module"
@@ -226,55 +200,113 @@ class TestSELinuxModuleFixCmd:
             assert req.fix_cmd[7].endswith("ceph_devstack.pp")
 
 
+class TestBlockPoolRequirements:
+    @pytest.fixture
+    def configured_pool(self, tmp_path, pool_parent):
+        config["block_pool"] = {"parent": pool_parent, "state_dir": str(tmp_path)}
+        return pool_parent
+
+    @pytest.mark.parametrize("cls", [BlockPoolDiskGroup, BlockPoolParentAccessible])
+    async def test_skipped_when_pool_disabled(self, cls):
+        req = cls()
+        with patch.object(req.host, "arun") as arun:
+            assert await req.check() is True
+        arun.assert_not_called()
+
+    async def test_disk_group_member_passes(self, configured_pool):
+        req = BlockPoolDiskGroup()
+        mock_proc = AsyncMock(wait=AsyncMock(return_value=0))
+        with patch.object(req.host, "arun", return_value=mock_proc) as arun:
+            assert await req.check() is True
+        arun.assert_awaited_once_with(["bash", "-c", "id -nG | grep -qw disk"])
+
+    async def test_disk_group_non_member_gets_fix_cmd(self, configured_pool):
+        req = BlockPoolDiskGroup()
+        mock_proc = AsyncMock(wait=AsyncMock(return_value=1))
+        whoami = subprocess.CompletedProcess([], 0, b"zack\n", b"")
+        with (
+            patch.object(req.host, "arun", return_value=mock_proc),
+            patch.object(req.host, "output", return_value=whoami),
+        ):
+            assert await req.check() is False
+        assert req.fix_cmd == [
+            "sudo",
+            "bash",
+            "-c",
+            "grep -q '^disk:' /etc/group || grep '^disk:' /usr/lib/group"
+            " >> /etc/group; usermod -a -G disk zack",
+        ]
+
+    @pytest.mark.parametrize("fix", [False, True])
+    @pytest.mark.parametrize("cls", [BlockPoolDiskGroup, BlockPoolParentAccessible])
+    async def test_invalid_pool_config_fails_without_traceback(self, cls, fix, caplog):
+        config["block_pool"] = {"parent": "/dev/dm-0"}
+        req = cls()
+        with (
+            patch.dict(config, {"args": {"fix": fix}}),
+            patch.object(req.host, "arun") as arun,
+        ):
+            assert await req.evaluate() is False
+        arun.assert_not_called()
+        assert "not allowed" in caplog.text
+
+    @pytest.mark.parametrize("returncode,expected", [(0, True), (1, False)])
+    async def test_parent_access_checked_on_host(
+        self, configured_pool, returncode, expected
+    ):
+        req = BlockPoolParentAccessible()
+        mock_proc = AsyncMock(wait=AsyncMock(return_value=returncode))
+        with patch.object(req.host, "arun", return_value=mock_proc) as arun:
+            assert await req.check() is expected
+        arun.assert_awaited_once_with(
+            ["test", "-r", configured_pool, "-a", "-w", configured_pool]
+        )
+
+
+CORE_REQUIREMENTS = [
+    "HasSudo",
+    "LoopControlDeviceExists",
+    "LoopControlDeviceWriteable",
+    "BlockPoolDiskGroup",
+    "BlockPoolParentAccessible",
+]
+
+
+@pytest.fixture
+def requirement_results():
+    """Stub CephDevStack's requirement classes; set an entry False to fail it."""
+    results = dict.fromkeys(CORE_REQUIREMENTS, True)
+    with contextlib.ExitStack() as stack:
+        for name in CORE_REQUIREMENTS:
+            mock = stack.enter_context(patch(f"ceph_devstack.resources.ceph.{name}"))
+            mock.return_value.evaluate = AsyncMock(
+                side_effect=lambda name=name: results[name]
+            )
+        stack.enter_context(
+            patch("ceph_devstack.host.host.selinux_enforcing", return_value=False)
+        )
+        yield results
+
+
 class TestCephDevStackCheckRequirements:
-    async def test_check_requirements_returns_true_when_all_pass(self):
+    @pytest.mark.parametrize("failing", [None, *CORE_REQUIREMENTS])
+    async def test_check_requirements_fails_if_any_requirement_fails(
+        self, requirement_results, failing
+    ):
         devstack = CephDevStack()
         devstack.service_specs = {}
         config["containers"] = {}
+        if failing:
+            requirement_results[failing] = False
+        assert await devstack.check_requirements() is (failing is None)
 
-        with (
-            patch("ceph_devstack.resources.ceph.HasSudo") as MockHasSudo,
-            patch(
-                "ceph_devstack.resources.ceph.LoopControlDeviceExists"
-            ) as MockLoopCtrl,
-            patch(
-                "ceph_devstack.resources.ceph.LoopControlDeviceWriteable"
-            ) as MockLoopCtrlWrite,
-            patch("ceph_devstack.host.host.selinux_enforcing") as mock_selinux,
-        ):
-            MockHasSudo.return_value = AsyncMock(evaluate=AsyncMock(return_value=True))
-            MockLoopCtrl.return_value = AsyncMock(evaluate=AsyncMock(return_value=True))
-            MockLoopCtrlWrite.return_value = AsyncMock(
-                evaluate=AsyncMock(return_value=True)
-            )
-            mock_selinux.return_value = False
-            result = await devstack.check_requirements()
-            assert result is True
-
-    async def test_check_requirements_returns_false_when_repo_missing(self):
+    async def test_check_requirements_returns_false_when_repo_missing(
+        self, requirement_results
+    ):
         devstack = CephDevStack()
         devstack.service_specs = {}
         config["containers"] = {
             "custom": {"repo": "/nonexistent/path"},
         }
-
-        with (
-            patch("ceph_devstack.resources.ceph.HasSudo") as MockHasSudo,
-            patch(
-                "ceph_devstack.resources.ceph.LoopControlDeviceExists"
-            ) as MockLoopCtrl,
-            patch(
-                "ceph_devstack.resources.ceph.LoopControlDeviceWriteable"
-            ) as MockLoopCtrlWrite,
-            patch("ceph_devstack.host.host.selinux_enforcing") as mock_selinux,
-            patch("ceph_devstack.host.host.path_exists") as mock_path_exists,
-        ):
-            MockHasSudo.return_value = AsyncMock(evaluate=AsyncMock(return_value=True))
-            MockLoopCtrl.return_value = AsyncMock(evaluate=AsyncMock(return_value=True))
-            MockLoopCtrlWrite.return_value = AsyncMock(
-                evaluate=AsyncMock(return_value=True)
-            )
-            mock_selinux.return_value = False
-            mock_path_exists.return_value = False
-            result = await devstack.check_requirements()
-            assert result is False
+        with patch("ceph_devstack.host.host.path_exists", return_value=False):
+            assert await devstack.check_requirements() is False
