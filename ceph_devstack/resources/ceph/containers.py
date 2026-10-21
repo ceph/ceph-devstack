@@ -218,6 +218,8 @@ class TestNode(Container):
             "/dev/fuse:/dev/fuse",
             "-v",
             "/dev/disk:/dev/disk",
+            "-v",
+            "/run/udev:/run/udev:ro",
             *self._get_available_dmi_mounts(),
             *self.additional_volumes,
             "--device",
