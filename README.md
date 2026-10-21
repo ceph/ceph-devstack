@@ -128,6 +128,10 @@ It's possible to skip the automatic suite-scheduling behavior:
 export TEUTHOLOGY_SUITE=none
 ```
 
+These variables, like `SSH_AUTH_SOCK`, are read when the teuthology container
+is created. Unless it is still running, `create` and `start` replace it, so
+the environment of the current shell applies.
+
 ### Using testnodes from an existing lab
 If you need to use "real" testnodes and have access to a lab, there are a few additonal steps to take. We will use the Sepia lab as an example below:
 
