@@ -32,6 +32,11 @@ class TestContainerResource(_TestPodmanResource, _TestContainerBase):
     def action(self, request):
         return request.param
 
+    def test_containers_config_overrides_global_config(self, cls):
+        obj = cls(containers_config={"container": {"image": "stack/image:v1"}})
+        assert obj.image == "stack/image:v1"
+        assert cls().image == "example.com/image:latest"
+
     async def test_action_calls_cmd_with_correct_args(self, cls, action):
         if action == "build":
             config["containers"][cls.__name__.lower()]["repo"] = "/repo_path"
