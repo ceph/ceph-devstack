@@ -114,6 +114,7 @@ class TestConfigDefaults:
                 "pulpito": {"image": "quay.io/ceph-infra/pulpito:main"},
                 "testnode": {
                     "count": 3,
+                    "loop_device_count": 1,
                     "loop_device_size": "5G",
                     "image": "quay.io/ceph-infra/teuthology-testnode:main",
                 },

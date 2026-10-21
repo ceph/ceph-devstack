@@ -18,6 +18,7 @@ from ceph_devstack.resources.ceph.containers import (
     Teuthology,
     Archive,
 )
+from ceph_devstack.resources.ceph.host_loops import LoopDeviceMixin
 from ceph_devstack.resources.ceph.requirements import (
     HasSudo,
     LoopControlDeviceExists,
@@ -158,6 +159,12 @@ class CephDevStack:
         logger.info("Creating containers...")
         await CephDevStackNetwork().create()
         await SSHKeyPair().create()
+        # Pre-allocate loop device numbers sequentially so concurrent creates
+        # don't race on the same device numbers.
+        for spec in self.service_specs.values():
+            for obj in spec["objects"]:
+                if isinstance(obj, LoopDeviceMixin):
+                    obj.allocate_devices()
         containers = []
         for spec in self.service_specs.values():
             for object in spec["objects"]:
