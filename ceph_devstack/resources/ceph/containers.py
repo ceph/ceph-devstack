@@ -210,6 +210,11 @@ class TestNode(Container):
             ",".join(self.capabilities),
             "--security-opt",
             "unmask=/sys/dev/block",
+            # With this container's /proc paths masked, crun inside it fails
+            # to mask them for nested containers (e.g. "mount `tmpfs` to
+            # `proc/acpi`: Permission denied", seen with podman 5.8/crun 1.29).
+            "--security-opt",
+            "unmask=/proc/*",
             "-v",
             "/sys/dev/block:/sys/dev/block",
             "-v",

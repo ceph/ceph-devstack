@@ -31,6 +31,11 @@ class TestTestnode:
         index = create_cmd.index("/run/udev:/run/udev:ro")
         assert create_cmd[index - 1] == "-v"
 
+    def test_testnode_create_cmd_unmasks_proc_for_nested_containers(self, cls):
+        create_cmd = cls("testnode_1").create_cmd
+        index = create_cmd.index("unmask=/proc/*")
+        assert create_cmd[index - 1] == "--security-opt"
+
     def test_testnode_devices_is_based_on_loop_device_count_config(self, cls):
         config.load(Path(__file__).parent.joinpath("fixtures", "testnode-config.toml"))
         testnode = cls("testnode_1")
