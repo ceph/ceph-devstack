@@ -4,7 +4,7 @@ import os
 
 from typing import Dict, List, Optional
 
-from ceph_devstack import config, logger
+from ceph_devstack import logger
 from ceph_devstack.resources import PodmanResource
 
 
@@ -29,8 +29,8 @@ class Container(PodmanResource):
     env_vars: Dict[str, Optional[str]] = {}
     _image_name: str | None = None
 
-    def __init__(self, name: str = ""):
-        super().__init__(name)
+    def __init__(self, name: str = "", **kwargs):
+        super().__init__(name, **kwargs)
         self.env_vars = {**self.__class__.env_vars}
         for key in self.env_vars:
             if os.environ.get(key):
@@ -47,7 +47,7 @@ class Container(PodmanResource):
 
     @property
     def config(self):
-        return config["containers"].get(self.__class__.__name__.lower(), {})
+        return self.containers_config.get(self.__class__.__name__.lower(), {})
 
     @property
     def image_name(self) -> str:

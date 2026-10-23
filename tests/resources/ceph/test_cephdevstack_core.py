@@ -3,8 +3,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from ceph_devstack import config
-from ceph_devstack.resources.ceph import CephDevStack
+from ceph_devstack import config, deep_merge
+from ceph_devstack.resources.ceph import SERVICES, CephDevStack
 from ceph_devstack.resources.ceph.containers import (
     Archive,
     Beanstalk,
@@ -17,6 +17,20 @@ from ceph_devstack.resources.ceph.containers import (
 
 
 class TestCephDevStackServiceSpecs:
+    @pytest.mark.parametrize("name", sorted(SERVICES))
+    def test_registry_key_is_the_service_config_section(self, name, tmp_path):
+        containers = deep_merge(config["containers"], {name: {"marker": True}})
+        obj = SERVICES[name](data_dir=tmp_path, containers_config=containers)
+        assert obj.config["marker"] is True
+
+    def test_unknown_service_and_secret_warn(self, tmp_path, caplog):
+        config["stacks"]["odd"] = {"services": ["nope"], "secrets": ["nada"]}
+        devstack = CephDevStack("odd")
+        assert devstack.service_specs == {}
+        assert devstack.secrets == []
+        assert "Unknown service 'nope'" in caplog.text
+        assert "Unknown secret 'nada'" in caplog.text
+
     def test_service_specs_includes_all_services(self):
         devstack = CephDevStack()
         assert "postgres" in devstack.service_specs
@@ -87,66 +101,36 @@ class TestCephDevStackServiceSpecs:
         paddles_obj = devstack.service_specs["paddles"]["objects"][0]
         assert "PADDLES_SQLALCHEMY_URL" not in paddles_obj.env_vars
 
-    def test_service_specs_count_attribute(self):
-        devstack = CephDevStack()
-        assert devstack.service_specs["postgres"]["count"] == 1
-        assert devstack.service_specs["testnode"]["count"] == 3
-
 
 class TestCephDevStackApply:
-    async def test_apply_calls_correct_method(self):
+    @pytest.mark.parametrize("action", ["pull", "create", "start"])
+    async def test_apply_dispatches_to_method(self, action):
         devstack = CephDevStack()
-        with patch.object(devstack, "pull", new_callable=AsyncMock) as mock_pull:
-            await devstack.apply("pull")
-            assert mock_pull.called is True
-
-    async def test_apply_calls_create(self):
-        devstack = CephDevStack()
-        with patch.object(devstack, "create", new_callable=AsyncMock) as mock_create:
-            await devstack.apply("create")
-            assert mock_create.called is True
-
-    async def test_apply_calls_start(self):
-        devstack = CephDevStack()
-        with patch.object(devstack, "start", new_callable=AsyncMock) as mock_start:
-            await devstack.apply("start")
-            assert mock_start.called is True
+        with patch.object(devstack, action, new_callable=AsyncMock) as mock:
+            await devstack.apply(action)
+            assert mock.called is True
 
 
-class TestCephDevStackPull:
-    async def test_pull_calls_pull_on_all_services(self):
-        devstack = CephDevStack()
-        # Override service_specs to control the objects
-        mock_postgres = AsyncMock()
-        mock_paddles = AsyncMock()
-        devstack.service_specs = {
-            "postgres": {"count": 1, "objects": [mock_postgres]},
-            "paddles": {"count": 1, "objects": [mock_paddles]},
-        }
-        with patch("ceph_devstack.logger.info"):
-            await devstack.pull()
-            mock_postgres.pull.assert_called_once()
-            mock_paddles.pull.assert_called_once()
-
-
-class TestCephDevStackBuild:
-    async def test_build_calls_build_on_all_services(self):
+@pytest.mark.parametrize("action", ["pull", "build", "stop"])
+class TestCephDevStackServiceDispatch:
+    async def test_action_dispatches_to_all_services(self, action):
         devstack = CephDevStack()
         mock_postgres = AsyncMock()
         mock_paddles = AsyncMock()
         devstack.service_specs = {
-            "postgres": {"count": 1, "objects": [mock_postgres]},
-            "paddles": {"count": 1, "objects": [mock_paddles]},
+            "postgres": {"objects": [mock_postgres]},
+            "paddles": {"objects": [mock_paddles]},
         }
         with patch("ceph_devstack.logger.info"):
-            await devstack.build()
-            mock_postgres.build.assert_called_once()
-            mock_paddles.build.assert_called_once()
+            await getattr(devstack, action)()
+            getattr(mock_postgres, action).assert_called_once()
+            getattr(mock_paddles, action).assert_called_once()
 
 
 class TestCephDevStackGetLogFile:
     def test_get_log_file_with_run_name_and_job_id(self, tmp_path):
         devstack = CephDevStack()
+        devstack.data_dir = tmp_path
         archive_dir = tmp_path / "archive"
         archive_dir.mkdir()
         run_name = "root-2025-01-01_00:00:00-orch:cephadm:smoke-small-main-distro-default-testnode"
@@ -157,16 +141,12 @@ class TestCephDevStackGetLogFile:
         log_file = job_dir / "teuthology.log"
         log_file.write_text("test log content")
 
-        # Mock Teuthology to return our test archive_dir
-        with patch("ceph_devstack.resources.ceph.Teuthology") as MockTeuthology:
-            mock_teuthology = MagicMock()
-            mock_teuthology.archive_dir = archive_dir
-            MockTeuthology.return_value = mock_teuthology
-            result = devstack.get_log_file(run_name, "42")
-            assert str(result) == str(log_file)
+        result = devstack.get_log_file(run_name, "42")
+        assert str(result) == str(log_file)
 
     def test_get_log_file_with_run_name_only(self, tmp_path):
         devstack = CephDevStack()
+        devstack.data_dir = tmp_path
         archive_dir = tmp_path / "archive"
         archive_dir.mkdir()
         run_name = "root-2025-01-01_00:00:00-orch:cephadm:smoke-small-main-distro-default-testnode"
@@ -177,30 +157,24 @@ class TestCephDevStackGetLogFile:
         log_file = job_dir / "teuthology.log"
         log_file.write_text("test log content")
 
-        with patch("ceph_devstack.resources.ceph.Teuthology") as MockTeuthology:
-            mock_teuthology = MagicMock()
-            mock_teuthology.archive_dir = archive_dir
-            MockTeuthology.return_value = mock_teuthology
-            result = devstack.get_log_file(run_name, "")
-            assert str(result) == str(log_file)
+        result = devstack.get_log_file(run_name, "")
+        assert str(result) == str(log_file)
 
     def test_get_log_file_raises_file_not_found_for_missing_job(self, tmp_path):
         devstack = CephDevStack()
+        devstack.data_dir = tmp_path
         archive_dir = tmp_path / "archive"
         archive_dir.mkdir()
         run_name = "root-2025-01-01_00:00:00-orch:cephadm:smoke-small-main-distro-default-testnode"
         run_dir = archive_dir / run_name
         run_dir.mkdir()
 
-        with patch("ceph_devstack.resources.ceph.Teuthology") as MockTeuthology:
-            mock_teuthology = MagicMock()
-            mock_teuthology.archive_dir = archive_dir
-            MockTeuthology.return_value = mock_teuthology
-            with pytest.raises(FileNotFoundError):
-                devstack.get_log_file(run_name, "99")
+        with pytest.raises(FileNotFoundError):
+            devstack.get_log_file(run_name, "99")
 
     def test_get_log_file_raises_file_not_found_for_missing_log(self, tmp_path):
         devstack = CephDevStack()
+        devstack.data_dir = tmp_path
         archive_dir = tmp_path / "archive"
         archive_dir.mkdir()
         run_name = "root-2025-01-01_00:00:00-orch:cephadm:smoke-small-main-distro-default-testnode"
@@ -209,24 +183,24 @@ class TestCephDevStackGetLogFile:
         job_dir = run_dir / "1"
         job_dir.mkdir()
 
-        with patch("ceph_devstack.resources.ceph.Teuthology") as MockTeuthology:
-            mock_teuthology = MagicMock()
-            mock_teuthology.archive_dir = archive_dir
-            MockTeuthology.return_value = mock_teuthology
-            with pytest.raises(FileNotFoundError):
-                devstack.get_log_file(run_name, "1")
+        with pytest.raises(FileNotFoundError):
+            devstack.get_log_file(run_name, "1")
 
     def test_get_log_file_uses_most_recent_when_no_run_name(
         self, tmp_path, create_log_file
     ):
         config["data_dir"] = str(tmp_path)
+        devstack = CephDevStack()
         create_log_file(
-            tmp_path, timestamp=datetime(year=2024, month=1, day=1), content="old log"
+            devstack.data_dir,
+            timestamp=datetime(year=2024, month=1, day=1),
+            content="old log",
         )
         new_log_file = create_log_file(
-            tmp_path, timestamp=datetime(year=2025, month=1, day=1), content="new log"
+            devstack.data_dir,
+            timestamp=datetime(year=2025, month=1, day=1),
+            content="new log",
         )
-        devstack = CephDevStack()
         result = devstack.get_log_file("", "")
         assert str(result) == str(new_log_file)
 
@@ -234,6 +208,7 @@ class TestCephDevStackGetLogFile:
         self, tmp_path
     ):
         devstack = CephDevStack()
+        devstack.data_dir = tmp_path
         archive_dir = tmp_path / "archive"
         archive_dir.mkdir()
 
@@ -251,11 +226,7 @@ class TestCephDevStackGetLogFile:
         job2_log = job2_dir / "teuthology.log"
         job2_log.write_text("job 2 log")
 
-        with patch("ceph_devstack.resources.ceph.Teuthology") as MockTeuthology:
-            mock_teuthology = MagicMock()
-            mock_teuthology.archive_dir = archive_dir
-            MockTeuthology.return_value = mock_teuthology
-            assert devstack.get_log_file(run_name, "").parent.name == "2"
+        assert devstack.get_log_file(run_name, "").parent.name == "2"
 
 
 class TestCephDevStackRemove:
@@ -264,38 +235,22 @@ class TestCephDevStackRemove:
         mock_postgres = AsyncMock()
         mock_paddles = AsyncMock()
         devstack.service_specs = {
-            "postgres": {"count": 1, "objects": [mock_postgres]},
-            "paddles": {"count": 1, "objects": [mock_paddles]},
+            "postgres": {"objects": [mock_postgres]},
+            "paddles": {"objects": [mock_paddles]},
         }
         with patch("ceph_devstack.resources.ceph.CephDevStackNetwork") as MockNetwork:
             mock_network_instance = MagicMock()
             mock_network_instance.remove = AsyncMock()
             MockNetwork.return_value = mock_network_instance
-            with patch("ceph_devstack.resources.ceph.SSHKeyPair") as MockSecret:
-                mock_secret_instance = MagicMock()
-                mock_secret_instance.remove = AsyncMock()
-                MockSecret.return_value = mock_secret_instance
-                with patch("ceph_devstack.logger.info"):
-                    await devstack.remove()
-                    mock_postgres.remove.assert_called_once()
-                    mock_paddles.remove.assert_called_once()
-                    mock_network_instance.remove.assert_called_once()
-                    mock_secret_instance.remove.assert_called_once()
-
-
-class TestCephDevStackStop:
-    async def test_stop_calls_stop_on_all_containers(self):
-        devstack = CephDevStack()
-        mock_postgres = AsyncMock()
-        mock_paddles = AsyncMock()
-        devstack.service_specs = {
-            "postgres": {"count": 1, "objects": [mock_postgres]},
-            "paddles": {"count": 1, "objects": [mock_paddles]},
-        }
-        with patch("ceph_devstack.logger.info"):
-            await devstack.stop()
-            mock_postgres.stop.assert_called_once()
-            mock_paddles.stop.assert_called_once()
+            mock_secret = MagicMock()
+            mock_secret.remove = AsyncMock()
+            devstack.secrets = [MagicMock(return_value=mock_secret)]
+            with patch("ceph_devstack.logger.info"):
+                await devstack.remove()
+                mock_postgres.remove.assert_called_once()
+                mock_paddles.remove.assert_called_once()
+                mock_network_instance.remove.assert_called_once()
+                mock_secret.remove.assert_called_once()
 
 
 class _StopWatching(Exception):
@@ -313,8 +268,8 @@ class TestCephDevStackWatch:
             obj.is_running.return_value = False
         paddles.start.side_effect = _StopWatching
         devstack.service_specs = {
-            "teuthology": {"count": 1, "objects": [teuth]},
-            "paddles": {"count": 1, "objects": [paddles]},
+            "teuthology": {"objects": [teuth]},
+            "paddles": {"objects": [paddles]},
         }
         with pytest.raises(_StopWatching):
             await devstack.watch()
@@ -329,7 +284,7 @@ class TestCephDevStackWait:
         mock_container.name = "teuthology"
         mock_container.wait = AsyncMock(return_value=42)
         devstack.service_specs = {
-            "teuthology": {"count": 1, "objects": [mock_container]},
+            "teuthology": {"objects": [mock_container]},
         }
         result = await devstack.wait("teuthology")
         assert result == 42
@@ -339,7 +294,7 @@ class TestCephDevStackWait:
         mock_container = AsyncMock()
         mock_container.name = "teuthology"
         devstack.service_specs = {
-            "teuthology": {"count": 1, "objects": [mock_container]},
+            "teuthology": {"objects": [mock_container]},
         }
         result = await devstack.wait("nonexistent")
         assert result == 1
@@ -348,6 +303,7 @@ class TestCephDevStackWait:
 class TestCephDevStackLogs:
     async def test_logs_with_locate_true(self, tmp_path):
         devstack = CephDevStack()
+        devstack.data_dir = tmp_path
         archive_dir = tmp_path / "archive"
         archive_dir.mkdir()
         run_name = "root-2025-01-01_00:00:00-orch:cephadm:smoke-small-main-distro-default-testnode"
@@ -362,28 +318,14 @@ class TestCephDevStackLogs:
         import io
 
         f = io.StringIO()
-        with patch("ceph_devstack.resources.ceph.Teuthology") as MockTeuthology:
-            mock_teuthology = MagicMock()
-            mock_teuthology.archive_dir = archive_dir
-            MockTeuthology.return_value = mock_teuthology
-
-            def mock_listdir(path):
-                if str(path) == str(archive_dir):
-                    return [run_name]
-                if str(path) == str(run_dir):
-                    return ["1"]
-                return []
-
-            with (
-                patch("os.listdir", side_effect=mock_listdir),
-                contextlib.redirect_stdout(f),
-            ):
-                await devstack.logs(locate=True)
+        with contextlib.redirect_stdout(f):
+            await devstack.logs(locate=True)
         output = f.getvalue()
         assert str(log_file) in output
 
     async def test_logs_with_locate_false(self, tmp_path):
         devstack = CephDevStack()
+        devstack.data_dir = tmp_path
         archive_dir = tmp_path / "archive"
         archive_dir.mkdir()
         run_name = "root-2025-01-01_00:00:00-orch:cephadm:smoke-small-main-distro-default-testnode"
@@ -398,66 +340,96 @@ class TestCephDevStackLogs:
         import io
 
         f = io.StringIO()
-        with patch("ceph_devstack.resources.ceph.Teuthology") as MockTeuthology:
-            mock_teuthology = MagicMock()
-            mock_teuthology.archive_dir = archive_dir
-            MockTeuthology.return_value = mock_teuthology
-
-            def mock_listdir(path):
-                if str(path) == str(archive_dir):
-                    return [run_name]
-                if str(path) == str(run_dir):
-                    return ["1"]
-                return []
-
-            with (
-                patch("os.listdir", side_effect=mock_listdir),
-                contextlib.redirect_stdout(f),
-            ):
-                await devstack.logs(locate=False)
+        with contextlib.redirect_stdout(f):
+            await devstack.logs(locate=False)
         output = f.getvalue()
         assert "test log content" in output
 
     async def test_logs_with_missing_file_shows_error(self, tmp_path, caplog):
         devstack = CephDevStack()
+        devstack.data_dir = tmp_path
         archive_dir = tmp_path / "archive"
         archive_dir.mkdir()
-        run_name = "root-2025-01-01_00:00:00-orch:cephadm:smoke-small-main-distro-default-testnode"
-        run_dir = archive_dir / run_name
-        run_dir.mkdir()
 
-        with patch("ceph_devstack.resources.ceph.Teuthology") as MockTeuthology:
-            mock_teuthology = MagicMock()
-            mock_teuthology.archive_dir = archive_dir
-            MockTeuthology.return_value = mock_teuthology
-
-            def mock_listdir(path):
-                if str(path) == str(archive_dir):
-                    return [run_name]
-                if str(path) == str(run_dir):
-                    return ["1"]
-                return []
-
-            with patch("os.listdir", side_effect=mock_listdir):
-                await devstack.logs()
+        await devstack.logs()
         assert "No log file found" in caplog.text
 
 
-class TestCephDevStackInit:
-    def test_init_without_postgres(self):
-        config["containers"] = {
-            "postgres": {"image": "postgres:latest", "count": 0},
-            "paddles": {"image": "paddles:latest", "count": 1},
-            "beanstalk": {"image": "beanstalk:latest", "count": 1},
-            "pulpito": {"image": "pulpito:latest", "count": 1},
-            "testnode": {
-                "image": "testnode:latest",
-                "count": 3,
-                "loop_device_count": 1,
-            },
-            "teuthology": {"image": "teuthology:latest", "count": 1},
-            "archive": {"image": "archive:latest", "count": 1},
+class TestCephDevStackStacks:
+    def test_custom_stack_limits_services(self, tmp_path):
+        config_file = tmp_path / "config.toml"
+        config_file.write_text(
+            """
+[stacks.minimal]
+services = ["postgres", "paddles"]
+"""
+        )
+        config.load(config_file)
+        devstack = CephDevStack(stack_name="minimal")
+        assert devstack.stack_name == "minimal"
+        assert set(devstack.service_specs) == {"postgres", "paddles"}
+
+
+@pytest.fixture
+def depends_config(tmp_path):
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        """
+[stacks.dep]
+services = ["postgres"]
+
+[stacks.dep.containers.postgres]
+image = "dep/postgres"
+
+[stacks.main]
+services = ["postgres"]
+depends = ["dep"]
+
+[stacks.main.containers.postgres]
+image = "main/postgres"
+"""
+    )
+    config.load(config_file)
+
+
+@pytest.mark.usefixtures("depends_config")
+class TestCephDevStackDepends:
+    async def test_run_depends_runs_dependency_stack(self):
+        devstack = CephDevStack(stack_name="main")
+        started_stacks = []
+
+        async def tracking_start(dep_self):
+            started_stacks.append(dep_self.stack_name)
+
+        with patch.object(CephDevStack, "start", tracking_start):
+            await devstack._run_depends()
+        assert started_stacks == ["dep"]
+
+    async def test_dependency_overrides_do_not_leak_into_parent(self):
+        default_image = config["containers"]["postgres"]["image"]
+        devstack = CephDevStack(stack_name="main")
+        with patch.object(CephDevStack, "start", new_callable=AsyncMock):
+            await devstack._run_depends()
+        postgres = devstack.service_specs["postgres"]["objects"][0]
+        assert postgres.image == "main/postgres"
+        assert config["containers"]["postgres"]["image"] == default_image
+
+    async def test_stop_and_remove_do_not_cascade_depends(self):
+        devstack = CephDevStack(stack_name="main")
+        mock_service = AsyncMock()
+        devstack.service_specs = {
+            "postgres": {"objects": [mock_service]},
         }
-        devstack = CephDevStack()
-        assert "archive" in devstack.service_specs
-        assert "postgres" not in devstack.service_specs
+        with (
+            patch("ceph_devstack.resources.ceph.CephDevStackNetwork") as MockNetwork,
+            patch("ceph_devstack.logger.info"),
+            patch.object(CephDevStack, "__init__") as mock_init,
+        ):
+            mock_network = MagicMock()
+            mock_network.remove = AsyncMock()
+            MockNetwork.return_value = mock_network
+            await devstack.stop()
+            await devstack.remove()
+        mock_init.assert_not_called()
+        mock_service.stop.assert_awaited_once()
+        mock_service.remove.assert_awaited_once()

@@ -42,6 +42,11 @@ def parse_args(args: List[str]) -> argparse.Namespace:
         default=DEFAULT_CONFIG_PATH,
         help="Path to the ceph-devstack config file",
     )
+    parser.add_argument(
+        "--stack",
+        default=None,
+        help="Stack to deploy (default: value of 'stack' in config)",
+    )
     subparsers = parser.add_subparsers(dest="command")
     parser_config = subparsers.add_parser("config", help="Get or set config items")
     subparsers_config = parser_config.add_subparsers(dest="config_op")
@@ -216,3 +221,8 @@ class Config(dict):
 
 config = Config()
 config.load()
+
+
+def base_data_dir() -> Path:
+    """The configured data_dir; each stack keeps its state in a subdirectory."""
+    return Path(config.get("data_dir", DEFAULT_DATA_DIR)).expanduser().absolute()

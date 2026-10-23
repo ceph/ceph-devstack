@@ -5,9 +5,11 @@ import pathlib
 import tempfile
 
 from subprocess import CalledProcessError
+from typing import Iterator, Type, TypeVar, cast
 
-from ceph_devstack import config, logger
+from ceph_devstack import base_data_dir, config, deep_merge, logger
 from ceph_devstack.host import host
+from ceph_devstack.resources import StackResource
 from ceph_devstack.resources.misc import Secret, Network
 from ceph_devstack.resources.ceph.containers import (
     Postgres,
@@ -88,39 +90,88 @@ class CephDevStackNetwork(Network):
     _name = "ceph-devstack"
 
 
-class CephDevStack:
-    networks = [CephDevStackNetwork]
-    secrets = [SSHKeyPair]
+SERVICES: dict[str, Type[StackResource]] = {
+    "postgres": Postgres,
+    "paddles": Paddles,
+    "beanstalk": Beanstalk,
+    "pulpito": Pulpito,
+    "teuthology": Teuthology,
+    "testnode": TestNode,
+    "archive": Archive,
+}
 
-    def __init__(self):
-        services = [
-            Postgres,
-            Paddles,
-            Beanstalk,
-            Pulpito,
-            Teuthology,
-            TestNode,
-            Archive,
-        ]
+SECRETS = {
+    "ssh_keypair": SSHKeyPair,
+}
+
+
+R = TypeVar("R", bound=StackResource)
+
+
+class CephDevStack:
+    def __init__(self, stack_name: str | None = None):
+        if stack_name is None:
+            stack_name = config.get("stack", "teuthology")
+        stacks = config.get("stacks", {})
+        if stack_name not in stacks:
+            known = ", ".join(sorted(stacks)) or "(none)"
+            raise ValueError(f"Unknown stack {stack_name!r}; known stacks: {known}")
+
+        self.stack_name = stack_name
+        self.stack_def = stacks[stack_name]
+        self.active_services = list(self.stack_def.get("services", []))
+        self.data_dir = base_data_dir() / stack_name
+        # The stack's own view of [containers]; the global config is untouched
+        # so that other stacks (e.g. dependencies) cannot leak into this one.
+        self.containers_config = deep_merge(
+            config.get("containers", {}), self.stack_def.get("containers", {})
+        )
+
         self.service_specs = {}
-        for service in services:
-            name = service.__name__.lower()
-            count = config["containers"][name].get("count", 1)
+        for name in self.active_services:
+            service = SERVICES.get(name)
+            if service is None:
+                logger.warning(f"Unknown service {name!r} in stack {self.stack_name!r}")
+                continue
+            count = self.containers_config.get(name, {}).get("count", 1)
             if count == 0:
                 continue
+            names = [""] if count == 1 else [f"{name}_{i}" for i in range(count)]
             self.service_specs[name] = {
-                "obj": service,
-                "count": count,
+                "objects": [self.make_resource(service, n) for n in names]
             }
-            if count == 1:
-                self.service_specs[name]["objects"] = [service()]
-            elif count > 1:
-                self.service_specs[name]["objects"] = [
-                    service(name=f"{name}_{i}") for i in range(count)
-                ]
-        if postgres_spec := self.service_specs.get("postgres"):
-            postgres_obj = postgres_spec["objects"][0]
-            paddles_obj = self.service_specs["paddles"]["objects"][0]
+        self._wire_services()
+        self.secrets = []
+        for secret_name in self.stack_def.get("secrets", []):
+            if secret_name not in SECRETS:
+                logger.warning(
+                    f"Unknown secret {secret_name!r} in stack {self.stack_name!r}"
+                )
+                continue
+            self.secrets.append(SECRETS[secret_name])
+
+    def make_resource(self, cls: Type[R], name: str = "") -> R:
+        """Instantiate a resource with this stack's data_dir and config."""
+        return cls(
+            name, data_dir=self.data_dir, containers_config=self.containers_config
+        )
+
+    def _objects(self) -> Iterator[StackResource]:
+        for spec in self.service_specs.values():
+            yield from spec["objects"]
+
+    def _first(self, name: str, cls: Type[R]) -> R | None:
+        """The (first) resource of service ``name``, if the stack deploys it.
+
+        ``cls`` is the class SERVICES maps ``name`` to; it only types the result.
+        """
+        spec = self.service_specs.get(name)
+        return cast(R, spec["objects"][0]) if spec else None
+
+    def _wire_services(self) -> None:
+        postgres_obj = self._first("postgres", Postgres)
+        paddles_obj = self._first("paddles", Paddles)
+        if postgres_obj and paddles_obj:
             paddles_obj.env_vars["PADDLES_SQLALCHEMY_URL"] = (
                 postgres_obj.paddles_sqla_url
             )
@@ -129,10 +180,11 @@ class CephDevStack:
         result = True
 
         result = has_sudo = await HasSudo().evaluate()
-        result = result and await LoopControlDeviceExists().evaluate()
-        result = result and await LoopControlDeviceWriteable().evaluate()
-        result = result and await BlockPoolDiskGroup().evaluate()
-        result = result and await BlockPoolParentAccessible().evaluate()
+        if "testnode" in self.service_specs:
+            result = result and await LoopControlDeviceExists().evaluate()
+            result = result and await LoopControlDeviceWriteable().evaluate()
+            result = result and await BlockPoolDiskGroup().evaluate()
+            result = result and await BlockPoolParentAccessible().evaluate()
 
         # Check for SELinux being enabled and Enforcing; then check for the
         # presence of our module. If necessary, inform the user and instruct
@@ -140,14 +192,17 @@ class CephDevStack:
         if has_sudo and await host.selinux_enforcing():
             result = result and await SELinuxModule().evaluate()
 
-        for name, obj in config["containers"].items():
-            if (repo := obj.get("repo")) and not host.path_exists(repo):
+        for name in self.service_specs:
+            obj = self.containers_config.get(name, {})
+            if (repo := obj.get("repo")) and not host.path_exists(
+                os.path.expanduser(str(repo))
+            ):
                 result = False
                 logger.error(f"Repo for {name} not found at {repo}")
         return result
 
-    async def apply(self, action):
-        return await getattr(self, action)()
+    async def apply(self, action: str, **kwargs) -> int | None:
+        return await getattr(self, action)(**kwargs)
 
     async def pull(self):
         logger.info("Pulling images...")
@@ -160,63 +215,64 @@ class CephDevStack:
             await spec["objects"][0].build()
 
     async def create(self):
+        args = config.get("args", {})
+        if args.get("build"):
+            await self.build()
         logger.info("Creating containers...")
         await CephDevStackNetwork().create()
-        await SSHKeyPair().create()
+        for secret in self.secrets:
+            await secret().create()
         # Pre-allocate loop device numbers sequentially so concurrent creates
         # don't race on the same device numbers.
-        for spec in self.service_specs.values():
-            for obj in spec["objects"]:
-                if isinstance(obj, LoopDeviceMixin):
-                    obj.allocate_devices()
-        containers = []
-        for spec in self.service_specs.values():
-            for object in spec["objects"]:
-                containers.append(object.create())
-        await asyncio.gather(*containers)
+        for obj in self._objects():
+            if isinstance(obj, LoopDeviceMixin):
+                obj.allocate_devices()
+        await self._gather_action("create")
+
+    async def _run_depends(self):
+        for dep_name in self.stack_def.get("depends", []):
+            logger.info(f"Running dependency stack: {dep_name}")
+            dep = CephDevStack(stack_name=dep_name)
+            await dep.start()
 
     async def start(self):
+        await self._run_depends()
         await self.create()
         logger.info("Starting containers...")
-        for spec in self.service_specs.values():
-            for object in spec["objects"]:
-                await object.start()
-        logger.info(
-            "All containers are running. To monitor teuthology, try running: podman "
-            "logs -f teuthology"
-        )
-        hostname = host.hostname()
-        logger.info(f"View test results at http://{hostname}:8081/")
+        for obj in self._objects():
+            await obj.start()
+        if "teuthology" in self.service_specs:
+            logger.info(
+                "All containers are running. To monitor teuthology, try running: "
+                "podman logs -f teuthology"
+            )
+        else:
+            logger.info("All containers are running.")
+        if pulpito := self._first("pulpito", Pulpito):
+            logger.info(
+                f"View test results at http://{host.hostname()}:{pulpito.port}/"
+            )
+
+    async def _gather_action(self, action: str):
+        await asyncio.gather(*(getattr(obj, action)() for obj in self._objects()))
 
     async def stop(self):
         logger.info("Stopping containers...")
-        containers = []
-        for spec in self.service_specs.values():
-            for object in spec["objects"]:
-                containers.append(object.stop())
-        await asyncio.gather(*containers)
+        await self._gather_action("stop")
 
     async def remove(self):
         logger.info("Removing containers...")
-        containers = []
-        for spec in self.service_specs.values():
-            for object in spec["objects"]:
-                containers.append(object.remove())
-        await asyncio.gather(*containers)
+        await self._gather_action("remove")
         await CephDevStackNetwork().remove()
-        await SSHKeyPair().remove()
+        for secret in self.secrets:
+            await secret().remove()
 
     async def watch(self):
         logger.info(
-            "Watching containers; will replace any that are removed and, "
-            "except for teuthology, restart any that are stopped"
+            "Entering watch mode: containers will be recreated if removed "
+            "and, except for teuthology, restarted if stopped."
         )
-        containers = []
-        for spec in self.service_specs.values():
-            if not spec["count"] > 0:
-                continue
-            for object in spec["objects"]:
-                containers.append(object)
+        containers = list(self._objects())
         logger.info(f"Watching {containers}")
         while True:
             for container in containers:
@@ -234,10 +290,9 @@ class CephDevStack:
                         await container.start()
 
     async def wait(self, container_name: str):
-        for spec in self.service_specs.values():
-            for object in spec["objects"]:
-                if object.name == container_name:
-                    return await object.wait()
+        for obj in self._objects():
+            if obj.name == container_name:
+                return await obj.wait()
         logger.error(f"Could not find container {container_name}")
         return 1
 
@@ -248,7 +303,7 @@ class CephDevStack:
             logger.error("No log file found")
         else:
             if locate:
-                print(str(log_file).replace(str(pathlib.Path.home()), "~"))
+                print(str(log_file.resolve()))
             else:
                 buffer_size = 8 * 1024
                 with open(log_file) as f:
@@ -256,7 +311,7 @@ class CephDevStack:
                         print(chunk, end="")
 
     def get_log_file(self, run_name: str = "", job_id: str = "") -> pathlib.Path:
-        archive_dir = Teuthology().archive_dir
+        archive_dir = self.data_dir / "archive"
 
         if not run_name:
             runs = get_runs(archive_dir)

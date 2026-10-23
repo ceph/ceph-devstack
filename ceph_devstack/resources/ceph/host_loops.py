@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Any, ClassVar
 
-from ceph_devstack import logger
+from ceph_devstack import base_data_dir, logger
 from ceph_devstack.block_pool import shared_pool
 from ceph_devstack.resources.ceph.block_devices import (
     BlockDeviceProvisioner,
@@ -11,6 +11,7 @@ from ceph_devstack.resources.ceph.block_devices import (
     backing_files,
     loop_number,
     loop_path,
+    stack_image_dirs,
 )
 
 
@@ -33,9 +34,15 @@ class LoopDeviceMixin:
 
     @classmethod
     def discover_used_loop_numbers(cls, image_dir: Path) -> set[int]:
-        """Loop numbers already attached on the host or claimed by backing files."""
+        """Loop numbers attached on the host or claimed by backing files.
+
+        Backing files of every stack count, not just image_dir's: after a
+        reboot the loops are detached, but another stack's files still claim
+        their numbers.
+        """
         attached = {number for number, _, _ in attached_loops()}
-        return attached | {number for _, number in backing_files(image_dir)}
+        image_dirs = {image_dir, *stack_image_dirs(base_data_dir())}
+        return attached | {n for d in image_dirs for _, n in backing_files(d)}
 
     @classmethod
     def owner_loop_numbers(cls, owner: str, image_dir: Path) -> list[int]:

@@ -2,15 +2,13 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from ceph_devstack import config
 from ceph_devstack.resources.ceph.containers import Teuthology
 
 
 class TestTeuthologyCreate:
     @pytest.fixture
     def teuth(self, tmp_path):
-        config["data_dir"] = str(tmp_path)
-        teuth = Teuthology()
+        teuth = Teuthology(data_dir=tmp_path)
         teuth.remove = AsyncMock()
         return teuth
 
@@ -44,19 +42,19 @@ class TestTeuthologyCreate:
 class TestTeuthologySSHAuthSock:
     SOCK = "/tmp/ssh-XXXX/agent.123"
 
-    def create_cmd(self, monkeypatch, sock_exists: bool) -> list[str]:
+    def create_cmd(self, tmp_path, monkeypatch, sock_exists: bool) -> list[str]:
         monkeypatch.setenv("SSH_AUTH_SOCK", self.SOCK)
         with patch(
             "ceph_devstack.resources.ceph.containers.host.path_exists",
             side_effect=lambda path: sock_exists and str(path) == self.SOCK,
         ):
-            return Teuthology().create_cmd
+            return Teuthology(data_dir=tmp_path).create_cmd
 
-    def test_mounts_socket_present_on_container_host(self, monkeypatch):
-        cmd = self.create_cmd(monkeypatch, sock_exists=True)
+    def test_mounts_socket_present_on_container_host(self, tmp_path, monkeypatch):
+        cmd = self.create_cmd(tmp_path, monkeypatch, sock_exists=True)
         assert f"{self.SOCK}:{self.SOCK}" in cmd
         assert f"SSH_AUTH_SOCK={self.SOCK}" in cmd
 
-    def test_skips_socket_missing_on_container_host(self, monkeypatch):
-        cmd = self.create_cmd(monkeypatch, sock_exists=False)
+    def test_skips_socket_missing_on_container_host(self, tmp_path, monkeypatch):
+        cmd = self.create_cmd(tmp_path, monkeypatch, sock_exists=False)
         assert not any("SSH_AUTH_SOCK" in arg or self.SOCK in arg for arg in cmd)

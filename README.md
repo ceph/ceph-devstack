@@ -105,7 +105,8 @@ pool state file and its lock always stay on the local machine.
 Each container picks host loop devices at create time: it needs
 `loop_device_count` devices of `loop_device_size`, reuses any existing backing
 files for that container name, then takes the lowest free loop numbers after
-scanning what is already attached or claimed in the `disk_images` directory.
+scanning what is already attached or claimed in any stack's `disk_images`
+directory.
 
 If `block_pool.json` is lost but the on-disk marker remains, start again to
 reclaim the marker; the device is not reformatted. The old allocations are
@@ -146,7 +147,7 @@ Once everything is started, a message similar to this will be logged:
 
 `View test results at http://smithi065.front.sepia.ceph.com:8081/`
 
-This link points to the running Pulpito instance. Test archives are also stored in the `--data-dir` (default: `~/.local/share/ceph-devstack`).
+This link points to the running Pulpito instance. Test archives are also stored in `<data_dir>/teuthology/archive` (`data_dir` defaults to `~/.local/share/ceph-devstack`).
 
 To watch teuthology's output, you can:
 

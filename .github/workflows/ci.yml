@@ -79,7 +79,7 @@ jobs:
       - name: Create tarball of log archive
         if: success() || failure()
         run: |
-          tar -czf /tmp/artifacts/archive.tar ~/.local/share/ceph-devstack/archive/
+          tar -czf /tmp/artifacts/archive.tar ~/.local/share/ceph-devstack/teuthology/archive/
       - name: Upload log archive
         if: success() || failure()
         uses: actions/upload-artifact@v7.0.1

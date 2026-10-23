@@ -71,6 +71,30 @@ def backing_files(image_dir: Path) -> list[tuple[str, int]]:
     ]
 
 
+def stack_image_dirs(base: Path) -> list[Path]:
+    """Every stack's disk_images directory, plus the pre-stack one in base.
+
+    One host command finds them, so other entries in base (block_pool.json,
+    stacks without disk images) cost no further host round trips.
+    """
+    proc = host.output(
+        [
+            "find",
+            str(base),
+            "-mindepth",
+            "2",
+            "-maxdepth",
+            "2",
+            "-type",
+            "d",
+            "-name",
+            "disk_images",
+        ]
+    )
+    found = proc.stdout.decode().splitlines() if proc.returncode == 0 else []
+    return [base / "disk_images", *sorted(Path(line) for line in found if line)]
+
+
 class CommandRunner(Protocol):
     async def __call__(
         self,

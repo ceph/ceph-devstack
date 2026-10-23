@@ -6,10 +6,40 @@ import subprocess
 
 from pathlib import Path
 from subprocess import CalledProcessError
-from typing import List, Dict, Set
+from typing import List, Dict, Optional, Protocol, Set
 
+from ceph_devstack import config
 from ceph_devstack.exec import Subprocess
 from ceph_devstack.host import host, local_host
+
+
+class StackResource(Protocol):
+    """Interface that CephDevStack expects from every service it manages."""
+
+    def __init__(
+        self, name: str = "", *, data_dir: Path, containers_config: dict
+    ) -> None: ...
+
+    @property
+    def name(self) -> str: ...
+
+    async def pull(self) -> None: ...
+
+    async def build(self) -> None: ...
+
+    async def create(self) -> None: ...
+
+    async def start(self) -> None: ...
+
+    async def stop(self) -> None: ...
+
+    async def remove(self) -> None: ...
+
+    async def exists(self) -> bool: ...
+
+    async def is_running(self) -> bool: ...
+
+    async def wait(self) -> int | None: ...
 
 
 class DevStack:
@@ -40,15 +70,37 @@ class PodmanResource:
     log: Dict[str, Set[str]] = {}
     _name: str | None = None
 
-    def __init__(self, name: str = ""):
+    def __init__(
+        self,
+        name: str = "",
+        *,
+        data_dir: Optional[Path] = None,
+        containers_config: Optional[dict] = None,
+    ):
         if name:
             self._name = name
+        self._data_dir = data_dir
+        self._containers_config = containers_config
 
     @property
     def name(self) -> str:
         if self._name is not None:
             return self._name
         return self.__class__.__name__.lower()
+
+    @property
+    def data_dir(self) -> Path:
+        """Where this resource keeps its on-disk state; set by its stack."""
+        if self._data_dir is None:
+            raise ValueError(f"{self.name}: no data_dir was given")
+        return self._data_dir
+
+    @property
+    def containers_config(self) -> dict:
+        """The stack's merged [containers] config, else the global one."""
+        if self._containers_config is None:
+            return config["containers"]
+        return self._containers_config
 
     async def cmd(
         self,
