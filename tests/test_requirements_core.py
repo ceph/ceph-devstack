@@ -414,6 +414,9 @@ class TestCheckRequirements:
             MockSysctl.return_value = AsyncMock(evaluate=AsyncMock(return_value=True))
             result = await requirements.check_requirements()
             assert result is True
+            checked = [c.args for c in MockSysctl.call_args_list]
+            assert ("kernel.keys.maxkeys", 20000) in checked
+            assert ("kernel.keys.maxbytes", 2000000) in checked
 
     async def test_check_requirements_returns_false_on_runtime_failure(self):
         with (

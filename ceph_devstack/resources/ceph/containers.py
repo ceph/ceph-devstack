@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 from typing import List
 
-from ceph_devstack import config, DEFAULT_CONFIG_PATH
+from ceph_devstack import config, DEFAULT_CONFIG_PATH, logger
 from ceph_devstack.host import host
 from ceph_devstack.resources.container import Container
 
@@ -210,6 +210,11 @@ class TestNode(Container):
             ",".join(self.capabilities),
             "--security-opt",
             "unmask=/sys/dev/block",
+            # With this container's /proc paths masked, crun inside it fails
+            # to mask them for nested containers (e.g. "mount `tmpfs` to
+            # `proc/acpi`: Permission denied", seen with podman 5.8/crun 1.29).
+            "--security-opt",
+            "unmask=/proc/*",
             "-v",
             "/sys/dev/block:/sys/dev/block",
             "-v",
@@ -218,6 +223,8 @@ class TestNode(Container):
             "/dev/fuse:/dev/fuse",
             "-v",
             "/dev/disk:/dev/disk",
+            "-v",
+            "/run/udev:/run/udev:ro",
             *self._get_available_dmi_mounts(),
             *self.additional_volumes,
             "--device",
@@ -376,7 +383,7 @@ class Teuthology(Container):
                 f"{ansible_inv}/secrets:/etc/ansible/secrets",
             ]
         ssh_auth_socket = os.environ.get("SSH_AUTH_SOCK")
-        if ssh_auth_socket and Path(ssh_auth_socket).exists():
+        if ssh_auth_socket and host.path_exists(ssh_auth_socket):
             cmd += [
                 "-v",
                 f"{ssh_auth_socket}:{ssh_auth_socket}",
@@ -424,4 +431,11 @@ class Teuthology(Container):
 
     async def create(self):
         self.archive_dir.expanduser().resolve().mkdir(parents=True, exist_ok=True)
+        # The container keeps the environment it was created with: the
+        # TEUTHOLOGY_* settings and an SSH agent socket that may be gone by
+        # its next start. A stopped one holds nothing the archive does not,
+        # so replace it with one built from the current environment.
+        if await self.exists() and not await self.is_running():
+            logger.info(f"{self.name}: recreating from the current environment")
+            await self.remove()
         await super().create()

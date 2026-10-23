@@ -37,6 +37,8 @@ It is currently under active development and has not yet had a formal release.
 * The following sysctl settings:
   * `fs.aio-max-nr=1048576`
   * `kernel.pid_max=4194304`
+  * `kernel.keys.maxkeys=20000` and `kernel.keys.maxbytes=2000000`, so that
+    nested containers do not exhaust the rootless user's keyring quota
 * If using SELinux in enforcing mode:
   * `setsebool -P container_manage_cgroup=true`
   * `setsebool -P container_use_devices=true`
@@ -125,6 +127,10 @@ It's possible to skip the automatic suite-scheduling behavior:
 ```bash
 export TEUTHOLOGY_SUITE=none
 ```
+
+These variables, like `SSH_AUTH_SOCK`, are read when the teuthology container
+is created. Unless it is still running, `create` and `start` replace it, so
+the environment of the current shell applies.
 
 ### Using testnodes from an existing lab
 If you need to use "real" testnodes and have access to a lab, there are a few additonal steps to take. We will use the Sepia lab as an example below:

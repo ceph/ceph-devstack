@@ -196,7 +196,10 @@ class CephDevStack:
         await SSHKeyPair().remove()
 
     async def watch(self):
-        logger.info("Watching containers; will replace any that are stopped")
+        logger.info(
+            "Watching containers; will replace any that are removed and, "
+            "except for teuthology, restart any that are stopped"
+        )
         containers = []
         for spec in self.service_specs.values():
             if not spec["count"] > 0:
@@ -213,7 +216,9 @@ class CephDevStack:
                         )
                         await container.create()
                         await container.start()
-                    elif not await container.is_running():
+                    elif not await container.is_running() and not isinstance(
+                        container, Teuthology
+                    ):
                         logger.info(f"Container {container.name} stopped; restarting")
                         await container.start()
 

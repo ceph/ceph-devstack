@@ -65,9 +65,13 @@ class PodmanResource:
         )
         returncode = await proc.wait()
         if check and returncode != 0:
-            # out = await proc.stderr.read()
-            # logger.error(out.decode())
-            raise CalledProcessError(cmd=args, returncode=returncode)
+            stdout, stderr = await proc.log_failure(args)
+            raise CalledProcessError(
+                returncode,
+                args,
+                output=stdout or None,
+                stderr=stderr or None,
+            )
         return proc
 
     def format_cmd(self, args: List):

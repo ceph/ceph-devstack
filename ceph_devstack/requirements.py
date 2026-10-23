@@ -296,5 +296,10 @@ async def check_requirements():
     # sysctl settings for OSD
     result = result and await SysctlValue("fs.aio-max-nr", 2097152).evaluate()
     result = result and await SysctlValue("kernel.pid_max", 4194304).evaluate()
+    # Every nested container gets a session keyring charged to the rootless
+    # user; the defaults (200 keys, 20000 bytes) run out with a few
+    # cephadm clusters ("crun: join keyctl ...: Disk quota exceeded").
+    result = result and await SysctlValue("kernel.keys.maxkeys", 20000).evaluate()
+    result = result and await SysctlValue("kernel.keys.maxbytes", 2000000).evaluate()
 
     return result
