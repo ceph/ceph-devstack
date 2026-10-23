@@ -18,10 +18,13 @@ from ceph_devstack.resources.ceph.containers import (
     Teuthology,
     Archive,
 )
+from ceph_devstack.resources.ceph.host_loops import LoopDeviceMixin
 from ceph_devstack.resources.ceph.requirements import (
     HasSudo,
     LoopControlDeviceExists,
     LoopControlDeviceWriteable,
+    BlockPoolDiskGroup,
+    BlockPoolParentAccessible,
     SELinuxModule,
 )
 from ceph_devstack.resources.ceph.utils import get_runs, get_jobs
@@ -128,6 +131,8 @@ class CephDevStack:
         result = has_sudo = await HasSudo().evaluate()
         result = result and await LoopControlDeviceExists().evaluate()
         result = result and await LoopControlDeviceWriteable().evaluate()
+        result = result and await BlockPoolDiskGroup().evaluate()
+        result = result and await BlockPoolParentAccessible().evaluate()
 
         # Check for SELinux being enabled and Enforcing; then check for the
         # presence of our module. If necessary, inform the user and instruct
@@ -158,6 +163,12 @@ class CephDevStack:
         logger.info("Creating containers...")
         await CephDevStackNetwork().create()
         await SSHKeyPair().create()
+        # Pre-allocate loop device numbers sequentially so concurrent creates
+        # don't race on the same device numbers.
+        for spec in self.service_specs.values():
+            for obj in spec["objects"]:
+                if isinstance(obj, LoopDeviceMixin):
+                    obj.allocate_devices()
         containers = []
         for spec in self.service_specs.values():
             for object in spec["objects"]:

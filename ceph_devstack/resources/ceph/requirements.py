@@ -1,10 +1,17 @@
 import hashlib
 import re
+import shlex
 
 from subprocess import CalledProcessError
 
 from ceph_devstack import logger, PROJECT_ROOT
+from ceph_devstack.block_pool import BlockPool, BlockPoolError, shared_pool
+from ceph_devstack.host import Host
 from ceph_devstack.requirements import Requirement, FixableRequirement
+
+
+def _host_user(host: Host) -> str:
+    return host.output(["whoami"]).stdout.decode().strip()
 
 
 class HasSudo(Requirement):
@@ -31,7 +38,7 @@ class LoopControlDeviceWriteable(FixableRequirement):
                 .communicate()[0]
                 .decode()
             )
-            user = self.host.run(["whoami"]).communicate()[0].strip().decode()
+            user = _host_user(self.host)
             if self.host.type == "local":
                 self.fix_cmd = ["sudo", "usermod", "-a", "-G", group, user]
             else:
@@ -45,6 +52,73 @@ class LoopControlDeviceWriteable(FixableRequirement):
             logger.warning(
                 "Note that group modifications require a logout to take effect."
             )
+
+
+class BlockPoolRequirement(Requirement):
+    """Passes without a configured pool; fails (logged) if its config is invalid.
+
+    An invalid config fails in evaluate(), before any suggest or --fix step,
+    since there is nothing to fix on the host for it.
+    """
+
+    async def evaluate(self) -> bool:
+        try:
+            pool = shared_pool()
+        except BlockPoolError as e:
+            logger.error(f"block pool: {e}")
+            return False
+        return pool is None or await super().evaluate()
+
+    async def check(self) -> bool:
+        pool = shared_pool()
+        return pool is None or await self.check_pool(pool)
+
+    async def check_pool(self, pool: BlockPool) -> bool:
+        raise NotImplementedError
+
+
+# Fedora CoreOS (e.g. a podman machine) defines the disk group in
+# /usr/lib/group, where usermod silently fails to add members; copy the group
+# into /etc/group first. Elsewhere it is already there and this does nothing.
+DISK_GROUP_TO_ETC = (
+    "grep -q '^disk:' /etc/group || grep '^disk:' /usr/lib/group >> /etc/group"
+)
+
+
+class BlockPoolDiskGroup(BlockPoolRequirement, FixableRequirement):
+    check_cmd = ["bash", "-c", "id -nG | grep -qw disk"]
+    suggest_msg = (
+        "block pool parent requires membership in the disk group "
+        "(log out and back in after joining)"
+    )
+
+    async def check_pool(self, pool: BlockPool) -> bool:
+        if await Requirement.check(self):
+            return True
+        user = shlex.quote(_host_user(self.host))
+        self.fix_cmd = [
+            "sudo",
+            "bash",
+            "-c",
+            f"{DISK_GROUP_TO_ETC}; usermod -a -G disk {user}",
+        ]
+        return False
+
+
+class BlockPoolParentAccessible(BlockPoolRequirement):
+    suggest_msg = "block pool parent must be readable and writable by this user"
+
+    async def check_pool(self, pool: BlockPool) -> bool:
+        proc = await self.host.arun(
+            ["test", "-r", pool.parent, "-a", "-w", pool.parent]
+        )
+        if await proc.wait() == 0:
+            return True
+        logger.error(
+            f"{self.suggest_msg} ({pool.parent}). "
+            "Join the disk group and re-login, or fix device permissions."
+        )
+        return False
 
 
 class SELinuxModule(FixableRequirement):

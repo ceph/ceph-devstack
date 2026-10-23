@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from ceph_devstack import config, logger, parse_args, VERBOSE
+from ceph_devstack.block_pool import BlockPoolError, format_size, shared_pool
 from ceph_devstack.requirements import check_requirements
 from ceph_devstack.resources.ceph import CephDevStack
 
@@ -32,16 +33,52 @@ COMMAND_HANDLERS = {
 }
 
 
+def _configure_console_logging(verbose: bool) -> None:
+    if not verbose:
+        return
+    for handler in logging.getLogger("root").handlers:
+        if not isinstance(handler, logging.FileHandler):
+            handler.setLevel(VERBOSE)
+
+
+def block_pool_status() -> int:
+    try:
+        pool = shared_pool()
+    except BlockPoolError as e:
+        logger.error(f"block pool: {e}")
+        return 1
+    if pool is None:
+        logger.info("block pool: disabled (no parent configured)")
+        return 0
+    logger.info(f"block pool parent: {pool.parent}")
+    logger.info(f"enrolled: {pool.enrolled}")
+    logger.info(f"pool id: {pool.pool_id}")
+    logger.info(f"state file: {pool.state_path}")
+    logger.info("allocations:" if pool.allocations else "allocations: (none)")
+    for key, region in sorted(pool.allocations.items()):
+        logger.info(
+            f"  {key}: offset {region['offset']}, "
+            f"size {format_size(region['size'])}, last owner {region['owner']}"
+        )
+    logger.info("free regions:" if pool.free_regions else "free regions: (none)")
+    for region in pool.free_regions:
+        logger.info(f"  offset {region['offset']}, size {format_size(region['size'])}")
+    logger.info(f"next offset: {pool.next_offset}")
+    return 0
+
+
 def main() -> int:
     args = parse_args(sys.argv[1:])
     config.load(args.config_file)
-    if args.verbose:
-        for handler in logging.getLogger("root").handlers:
-            if not isinstance(handler, logging.FileHandler):
-                handler.setLevel(VERBOSE)
+    _configure_console_logging(args.verbose)
     if args.command == "config":
         CONFIG_HANDLERS[args.config_op](config, args)
         return 0
+    if args.command == "block-pool":
+        if args.block_pool_op != "status":
+            logger.error("Usage: ceph-devstack block-pool status")
+            return 2
+        return block_pool_status()
     config["args"] = vars(args)
     data_path = Path(config["data_dir"]).expanduser()
     data_path.mkdir(parents=True, exist_ok=True)

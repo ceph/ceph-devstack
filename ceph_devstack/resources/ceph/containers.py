@@ -6,6 +6,7 @@ from typing import List
 
 from ceph_devstack import config, DEFAULT_CONFIG_PATH, logger
 from ceph_devstack.host import host
+from ceph_devstack.resources.ceph.host_loops import LoopDeviceMixin
 from ceph_devstack.resources.container import Container
 
 
@@ -154,7 +155,7 @@ class Pulpito(Container):
     }
 
 
-class TestNode(Container):
+class TestNode(LoopDeviceMixin, Container):
     _image_name = "teuthology-testnode"
     capabilities = [
         "SYS_ADMIN",
@@ -178,13 +179,7 @@ class TestNode(Container):
 
     def __init__(self, name: str = ""):
         super().__init__(name=name)
-        self.index = 0
-        if "_" in self.name:
-            self.index = int(self.name.split("_")[-1])
-        self.loop_device_count = config["containers"]["testnode"].get(
-            "loop_device_count", 1
-        )
-        self.devices = [self.device_name(i) for i in range(self.loop_device_count)]
+        self._init_loop_devices()
 
     @property
     def loop_img_dir(self):
@@ -259,70 +254,6 @@ class TestNode(Container):
     async def remove(self):
         await super().remove()
         await self.remove_loop_devices()
-
-    async def create_loop_devices(self):
-        for device in self.devices:
-            await self.create_loop_device(device)
-
-    async def remove_loop_devices(self):
-        for device in self.devices:
-            await self.remove_loop_device(device)
-
-    async def create_loop_device(self, device: str):
-        size = config["containers"]["testnode"]["loop_device_size"]
-        os.makedirs(self.loop_img_dir, exist_ok=True)
-        proc = await self.cmd(["lsmod", "|", "grep", "loop"])
-        if proc and await proc.wait() != 0:
-            await self.cmd(["sudo", "modprobe", "loop"])
-        loop_img_name = os.path.join(self.loop_img_dir, self.device_image(device))
-        await self.remove_loop_device(device)
-        device_pos = device.removeprefix("/dev/loop")
-        await self.cmd(
-            [
-                "sudo",
-                "mknod",
-                "-m700",
-                device,
-                "b",
-                "7",
-                device_pos,
-            ],
-            check=True,
-        )
-        await self.cmd(
-            ["sudo", "chown", f"{os.getuid()}:{os.getgid()}", device],
-            check=True,
-        )
-        await self.cmd(
-            [
-                "sudo",
-                "dd",
-                "if=/dev/null",
-                f"of={loop_img_name}",
-                "bs=1",
-                "count=0",
-                f"seek={size}",
-            ],
-            check=True,
-        )
-        await self.cmd(["sudo", "losetup", device, loop_img_name], check=True)
-        await self.cmd(["chcon", "-t", "fixed_disk_device_t", device])
-
-    async def remove_loop_device(self, device: str):
-        loop_img_name = os.path.join(self.loop_img_dir, self.device_image(device))
-        if os.path.ismount(device):
-            await self.cmd(["umount", device], check=True)
-        if host.path_exists(device):
-            await self.cmd(["sudo", "losetup", "-d", device])
-            await self.cmd(["sudo", "rm", "-f", device], check=True)
-        if host.path_exists(loop_img_name):
-            os.remove(loop_img_name)
-
-    def device_name(self, index: int):
-        return f"/dev/loop{self.loop_device_count * self.index + index}"
-
-    def device_image(self, device: str):
-        return f"{self.name}-{device.removeprefix('/dev/loop')}"
 
     def _get_available_dmi_mounts(self) -> List[str]:
         """Return volume mount args for DMI files that exist on the host.
